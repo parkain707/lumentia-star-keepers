@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#070b18" />
+  <meta name="description" content="루멘티아 : 별의 파수꾼 - 오리지널 별빛 수집 힐링 RPG" />
+  <title>루멘티아 : 별의 파수꾼</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="cosmos" aria-hidden="true">
+    <span class="nebula nebula-a"></span>
+    <span class="nebula nebula-b"></span>
+    <span class="nebula nebula-c"></span>
+    <span class="star-dust"></span>
+  </div>
+
+  <div id="app">
+    <header class="hud">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+          <defs>
+            <linearGradient id="brandGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#ffe7a8" />
+              <stop offset="1" stop-color="#8fdcff" />
+            </linearGradient>
+          </defs>
+          <path d="M16 2l3.4 9.4L29 16l-9.6 4.6L16 30l-3.4-9.4L3 16l9.6-4.6z" fill="url(#brandGrad)" />
+          <circle cx="16" cy="16" r="2.1" fill="#060a16" />
+        </svg>
+        <div class="brand-text">
+          <b>루멘티아</b>
+          <span>별의 파수꾼</span>
+        </div>
+      </div>
+      <div class="hud-right">
+        <div class="currency" title="미소">
+          <span class="ico ico-gold" aria-hidden="true"></span>
+          <b id="hud-gold">0</b>
+        </div>
+        <div class="currency" title="별빛">
+          <span class="ico ico-gem" aria-hidden="true"></span>
+          <b id="hud-gems">0</b>
+        </div>
+        <button id="btn-settings" class="icon-btn" aria-label="설정">
+          <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">
+            <path fill="currentColor" d="M19.4 13a7.8 7.8 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-1.7-1L15 3.4h-4l-.4 2.6a7.6 7.6 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7.8 7.8 0 0 0 0 2l-2 1.6 2 3.4 2.4-1c.5.4 1.1.7 1.7 1l.4 2.6h4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.4 1 2-3.4zM12 15.4A3.4 3.4 0 1 1 12 8.6a3.4 3.4 0 0 1 0 6.8z" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <button id="teacher-report" class="teacher-report" type="button" aria-live="polite" hidden>
+      <span class="teacher-report-mark" aria-hidden="true">✧</span>
+      <span class="teacher-report-body">
+        <b id="teacher-report-text">미소 +0</b>
+        <span class="teacher-report-note">획득한 미소를 선생님에게 알려주세요.</span>
+      </span>
+    </button>
+
+    <!-- Real-time Interactive Quest & Navigation Guide -->
+    <div id="guide-banner" class="guide-banner" role="status">
+      <div class="guide-badge">
+        <span class="guide-pulse-dot"></span>
+        <span class="guide-icon">✦</span>
+        <b id="guide-step-title">여정 안내</b>
+      </div>
+      <p id="guide-step-desc" class="guide-desc">동행들이 자동으로 길을 엽니다. 전투를 지켜보며 미소를 모으세요!</p>
+      <button id="guide-action-btn" class="guide-action-btn" type="button">바로가기 →</button>
+    </div>
+
+    <main id="main">
+      <section id="screen-battle" class="screen screen-battle active" data-screen="battle">
+        <div class="stage-bar">
+          <div class="stage-label">
+            <p class="eyebrow" id="stage-chapter">성운의 외곽</p>
+            <p class="stage-title">스테이지 <b id="stage-num">1</b><span class="stage-boss" id="stage-boss-tag" hidden>성좌</span><span class="stage-haze" id="stage-haze-tag" hidden>깊은 안개</span></p>
+          </div>
+          <div class="stage-meta">
+            <div class="meta-pill"><span>별빛</span><b id="party-power">0</b></div>
+            <div class="meta-best">최고 <b id="best-stage">0</b></div>
+          </div>
+        </div>
+
+        <div class="battle-wrap" id="battle-wrap">
+          <canvas id="battle-canvas"></canvas>
+          <div class="battle-top">
+            <span class="live-chip"><i></i>자동 산책</span>
+            <span class="income-chip" id="income-chip">+0 /초</span>
+          </div>
+          <div id="stage-banner" class="stage-banner" aria-live="polite"></div>
+          <button id="ult-btn" class="ult-btn" aria-label="별자리 합주">
+            <span class="ult-ring" id="ult-ring"></span>
+            <span class="ult-core">
+              <span class="ult-name">별자리 합주</span>
+              <span class="ult-pct" id="ult-pct">충전 중</span>
+            </span>
+          </button>
+          <button id="btn-guide" class="guide-btn" aria-label="게임 방법"><i aria-hidden="true">?</i>게임 방법</button>
+        </div>
+
+        <div class="party-row" id="party-row"></div>
+        <p class="battle-tip">동행들은 스스로 빛을 잇습니다 · 성장으로 더 먼 별길로</p>
+      </section>
+
+      <section id="screen-heroes" class="screen" data-screen="heroes">
+        <div class="screen-head">
+          <div>
+            <p class="eyebrow">MY CONSTELLATION</p>
+            <h1>영웅</h1>
+          </div>
+          <p class="sub" id="roster-count">보유 0 / 8</p>
+        </div>
+
+        <div class="panel formation-panel">
+          <div class="panel-head">
+            <span>함께 걷는 동행</span>
+            <span class="panel-note">최대 3명 · 자리를 눌러 교체</span>
+          </div>
+          <div class="formation" id="formation"></div>
+          <button id="btn-bulk-level" class="btn-line">
+            <span>동행 함께 성장</span>
+            <b id="bulk-hint">미소로 레벨 업</b>
+          </button>
+        </div>
+
+        <div class="hero-grid" id="hero-grid"></div>
+      </section>
+
+      <section id="screen-summon" class="screen" data-screen="summon">
+        <div class="screen-head">
+          <div>
+            <p class="eyebrow">STARLIGHT SUMMON</p>
+            <h1>소환</h1>
+          </div>
+          <p class="sub">별의 인도</p>
+        </div>
+
+        <div class="summon-banner">
+          <div class="banner-halo" aria-hidden="true"></div>
+          <svg class="banner-art" viewBox="0 0 320 200" aria-hidden="true">
+            <defs>
+              <radialGradient id="sumStar" cx="50%" cy="50%" r="50%">
+                <stop offset="0" stop-color="#fff6d8" />
+                <stop offset="1" stop-color="#8fdcff" stop-opacity="0" />
+              </radialGradient>
+              <linearGradient id="sumLine" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#8fdcff" stop-opacity=".7" />
+                <stop offset="1" stop-color="#b79bff" stop-opacity=".15" />
+              </linearGradient>
+            </defs>
+            <g stroke="url(#sumLine)" stroke-width="1" fill="none">
+              <path d="M62 132L108 88L152 112L196 62L248 90" />
+              <path d="M152 112L176 152L236 146" />
+              <path d="M108 88L92 44" />
+            </g>
+            <g fill="#dfefff">
+              <circle cx="62" cy="132" r="2.4" /><circle cx="108" cy="88" r="3.2" />
+              <circle cx="152" cy="112" r="2.6" /><circle cx="196" cy="62" r="3" />
+              <circle cx="248" cy="90" r="2.2" /><circle cx="176" cy="152" r="2.4" />
+              <circle cx="236" cy="146" r="2" /><circle cx="92" cy="44" r="1.8" />
+            </g>
+            <circle cx="196" cy="62" r="34" fill="url(#sumStar)" opacity=".8" />
+            <g transform="translate(196 62)" fill="#ffe7a8">
+              <path d="M0-17l4.5 12.5L17 0 4.5 4.5 0 17-4.5 4.5-17 0-4.5-12.5z" />
+            </g>
+            <g fill="#8fdcff" opacity=".55">
+              <circle cx="40" cy="70" r="1.2" /><circle cx="286" cy="130" r="1.4" />
+              <circle cx="138" cy="38" r="1" /><circle cx="266" cy="42" r="1" />
+            </g>
+          </svg>
+          <div class="banner-copy">
+            <p class="eyebrow">CONSTELLATION</p>
+            <h2>별이 응답한다</h2>
+            <p>성좌의 힘을 지닌 파수꾼과 계약하세요.</p>
+          </div>
+          <div class="banner-pity">
+            <span>SSR 확정까지</span><b id="pity-left">60</b><span>회</span>
+          </div>
+        </div>
+
+        <div class="summon-buttons">
+          <button id="btn-summon1" class="btn-summon ghost">
+            <span class="summon-title">1회 소환</span>
+            <span class="summon-price"><i class="ico ico-gem"></i><b>300</b></span>
+          </button>
+          <button id="btn-summon10" class="btn-summon primary">
+            <span class="summon-title">10회 소환</span>
+            <span class="summon-price"><i class="ico ico-gem"></i><b>2,700</b></span>
+            <span class="summon-badge">SR 이상 확정</span>
+          </button>
+        </div>
+
+        <button id="btn-free-ten" class="btn-free" hidden>
+          <span>초대 소환 · 무료 10회</span>
+        </button>
+
+        <div class="summon-foot">
+          <button id="btn-rates" class="text-btn">소환 확률 안내</button>
+          <p>10회 소환 시 SR 이상 1명이 확정되며,<br>60회 이내에 SSR 영웅이 확정됩니다.</p>
+        </div>
+      </section>
+
+      <section id="screen-missions" class="screen" data-screen="missions">
+        <div class="screen-head">
+          <div>
+            <p class="eyebrow">RECORDS</p>
+            <h1>임무</h1>
+          </div>
+          <p class="sub" id="mission-done">0 / 0</p>
+        </div>
+        <div class="mission-list" id="mission-list"></div>
+        <div class="lore-card">
+          <p class="eyebrow">LUMENTIA</p>
+          <p>별빛이 흐르는 세계, 루멘티아.<br />안개가 별빛을 하나씩 가리기 시작했고,<br />성좌의 이름을 이어받은 파수꾼들이 다시 깨어납니다.</p>
+        </div>
+        <p class="origin-note">세계관 · 캐릭터 · 일러스트 · 음향은 모두 본 게임의 오리지널 요소입니다.</p>
+      </section>
+    </main>
+
+    <nav class="nav" id="nav" aria-label="주 메뉴">
+      <button class="nav-btn active" data-tab="battle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 20c3-5 4.5-3 7-7s3.5-6.5 9-8.5" />
+          <circle cx="11.5" cy="12.5" r="1.4" />
+          <path d="M18 3.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2z" />
+        </svg>
+        <span>별길</span>
+      </button>
+      <button class="nav-btn" data-tab="heroes">
+        <span class="nav-dot" id="heroes-dot" hidden></span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="8" r="3.3" />
+          <path d="M5 20c.9-3.7 3.5-5.5 7-5.5s6.1 1.8 7 5.5" />
+          <path d="M18.5 5.5l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7z" />
+        </svg>
+        <span>영웅</span>
+      </button>
+      <button class="nav-btn" data-tab="summon">
+        <span class="nav-dot" id="summon-dot" hidden></span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M11 3l1.8 4.9L17.7 9.6l-4.9 1.8L11 16.3l-1.8-4.9L4.3 9.6l4.9-1.7L11 3z" />
+          <path d="M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8L18 15z" />
+        </svg>
+        <span>소환</span>
+      </button>
+      <button class="nav-btn" data-tab="missions">
+        <span class="nav-dot" id="missions-dot" hidden></span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="5" y="4.5" width="14" height="16.5" rx="2.2" />
+          <path d="M9 4.5V3.2h6v1.3M8.5 10h7M8.5 14h7M8.5 18h4.2" />
+        </svg>
+        <span>임무</span>
+      </button>
+    </nav>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div id="modal-root"></div>
+  <div id="gacha-root"></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/art.js"></script>
+  <script src="js/battle.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
