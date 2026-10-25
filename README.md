@@ -3,6 +3,14 @@
 
 ---
 
+## 🌐 영구 보장 글로벌 접속 주소 (Live URLs)
+- **⚡ 초단축 공식 링크 (영구 보장):** [https://is.gd/lumentia](https://is.gd/lumentia) *(단 17자)*
+- **🛡️ TinyURL 영구 보장 링크:** [https://tinyurl.com/lumentia-rpg](https://tinyurl.com/lumentia-rpg)
+- **🌍 원본 GitHub Pages URL:** [https://parkain707.github.io/lumentia-star-keepers/](https://parkain707.github.io/lumentia-star-keepers/)
+- **📱 모바일 QR 코드:** `lumentia-qrcode.png` (스마트폰 카메라로 스캔 즉시 접속)
+
+---
+
 ## 🌟 개요 및 기획 사양
 - **장르:** 수집형 방치 RPG (웹 브라우저 기반)
 - **저작권 무결성:** 원작(G123 작안의 샤나)의 IP, 코드, 이미지, 음원을 전혀 사용하지 않고 100% 독자 구축한 오리지널 타이틀입니다.
