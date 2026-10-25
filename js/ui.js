@@ -200,6 +200,7 @@ const UI = (function () {
     });
 
     renderAll();
+    updateKeeperHUD();
   }
 
   /* ---------------- tabs ---------------- */
@@ -870,6 +871,13 @@ const UI = (function () {
         '<div><b>타격 효과음 (SFX)</b><p>전투 타격음, 스킬, 궁극기 효과음을 재생합니다.</p></div>' +
         '<button class="toggle ' + (sfxOn ? 'on' : '') + '" id="toggle-sfx" aria-label="효과음 토글"></button>' +
       '</div>' +
+      '<div class="setting-row account-row">' +
+        '<div><b>파수꾼 계정</b><p>현재 접속: <span class="keeper-pill">' + (typeof Game !== 'undefined' ? Game.getKeeperName() : '별의 파수꾼') + '</span></p></div>' +
+        '<div style="display:flex;gap:6px">' +
+          '<button class="btn-line" id="btn-copy-transfer" style="width:auto;height:34px;padding:0 10px;font-size:11px;margin:0">인수인계 코드</button>' +
+          '<button class="btn-ghost" id="btn-logout" style="width:auto;height:34px;padding:0 10px;font-size:11px">계정 전환</button>' +
+        '</div>' +
+      '</div>' +
       '<div class="setting-row">' +
         '<div><b>받은 미소 기록</b><p>선생님께 알려드릴 미소 기록을 확인합니다.</p></div>' +
         '<button class="btn-ghost" id="open-report" style="width:auto;height:32px;padding:0 12px;font-size:10.5px">열기</button>' +
@@ -904,6 +912,38 @@ const UI = (function () {
     m.querySelector('#open-report').addEventListener('click', openTeacherLog);
     m.querySelector('#open-guide').addEventListener('click', openGuide);
     m.querySelector('#btn-reset').addEventListener('click', openReset);
+
+    const copyBtn = m.querySelector('#btn-copy-transfer');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', function () {
+        SFX.play('click');
+        if (typeof Auth === 'undefined') return;
+        const res = Auth.exportTransferCode();
+        if (res.ok) {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(res.code).then(function () {
+              toast('인수인계 코드가 복사되었습니다! 다른 기기에서 붙여넣으세요.');
+            }).catch(function () {
+              prompt('아래 인수인계 코드를 복사하세요:', res.code);
+            });
+          } else {
+            prompt('아래 인수인계 코드를 복사하세요:', res.code);
+          }
+        } else {
+          toast(res.error || '코드 생성 실패');
+        }
+      });
+    }
+
+    const logoutBtn = m.querySelector('#btn-logout');
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', function () {
+        SFX.play('click');
+        if (confirm('현재 파수꾼 계정에서 로그아웃하고 다른 파수꾼으로 전환하시겠습니까?')) {
+          Game.logout();
+        }
+      });
+    }
   }
 
   function openReset() {
@@ -941,6 +981,194 @@ const UI = (function () {
       closeModal();
       refreshAll();
       toast('미소 +' + fmt(info.gold), 'gold');
+    });
+  }
+
+  function updateKeeperHUD() {
+    const el = document.getElementById('hud-keeper-name');
+    if (el && typeof Game !== 'undefined') {
+      const name = Game.getKeeperName();
+      el.textContent = '파수꾼: ' + name;
+    }
+  }
+
+  function openKeeperGate() {
+    closeModal();
+    let currentMode = 'register';
+    const users = (typeof Auth !== 'undefined') ? Auth.getUsers() : {};
+    const userNames = Object.keys(users);
+
+    const m = modal(
+      '<div class="keeper-gate">' +
+        '<div class="gate-header">' +
+          '<div class="gate-mark">' +
+            '<svg viewBox="0 0 32 32" width="44" height="44" aria-hidden="true">' +
+              '<defs><linearGradient id="gkg" x1="0" y1="0" x2="1" y2="1">' +
+                '<stop offset="0" stop-color="#ffe7a8"/>' +
+                '<stop offset="1" stop-color="#8fdcff"/>' +
+              '</linearGradient></defs>' +
+              '<path d="M16 2l3.4 9.4L29 16l-9.6 4.6L16 30l-3.4-9.4L3 16l9.6-4.6z" fill="url(#gkg)"/>' +
+              '<circle cx="16" cy="16" r="2.5" fill="#070b18"/>' +
+            '</svg>' +
+          '</div>' +
+          '<h2>파수꾼 관문</h2>' +
+          '<p class="gate-sub">이름과 비밀번호로 별빛 여정을 저장하고 언제든 이어서 플레이하세요.</p>' +
+        '</div>' +
+
+        '<div class="gate-tabs">' +
+          '<button type="button" class="gate-tab active" data-gate-tab="register">신규 파수꾼 등록</button>' +
+          '<button type="button" class="gate-tab" data-gate-tab="login">이어서 하기</button>' +
+          '<button type="button" class="gate-tab" data-gate-tab="transfer">기기 인수인계</button>' +
+        '</div>' +
+
+        '<form id="gate-form" class="gate-form" onsubmit="return false;">' +
+          '<div class="gate-field" id="wrap-gate-name">' +
+            '<label for="gate-name">파수꾼 이름</label>' +
+            '<input type="text" id="gate-name" placeholder="2~12자 (예: 별빛수호자)" maxlength="12" autocomplete="username" spellcheck="false" required />' +
+          '</div>' +
+
+          '<div class="gate-field" id="wrap-gate-pass">' +
+            '<label for="gate-pass">비밀번호</label>' +
+            '<input type="password" id="gate-pass" placeholder="4자리 이상 보안 암호" maxlength="24" autocomplete="current-password" required />' +
+          '</div>' +
+
+          '<div class="gate-field" id="wrap-gate-code" style="display:none">' +
+            '<label for="gate-code">기기 인수인계 백업 코드</label>' +
+            '<textarea id="gate-code" placeholder="이전 기기에서 복사한 LUMEN- 코드를 여기에 붙여넣으세요" rows="3"></textarea>' +
+          '</div>' +
+
+          '<div class="gate-error" id="gate-error" style="display:none"></div>' +
+
+          (userNames.length > 0 ? (
+            '<div class="gate-existing" id="wrap-gate-existing" style="display:none">' +
+              '<span>이 기기에 저장된 파수꾼: </span>' +
+              '<div class="user-chip-list">' +
+                userNames.map(function (u) {
+                  return '<button type="button" class="user-chip" data-name="' + u + '">' + u + '</button>';
+                }).join('') +
+              '</div>' +
+            '</div>'
+          ) : '') +
+
+          '<div class="gate-note" id="gate-note">' +
+            '✨ 등록한 이름과 비밀번호는 나중에 <b>이어서 하기</b> 시 필요하므로 꼭 기억해주세요!' +
+          '</div>' +
+
+          '<div class="gate-actions">' +
+            '<button type="submit" class="btn-primary" id="btn-gate-submit">별빛 등록하고 시작</button>' +
+          '</div>' +
+        '</form>' +
+      '</div>',
+      { sticky: true }
+    );
+
+    const nameInput = m.querySelector('#gate-name');
+    const passInput = m.querySelector('#gate-pass');
+    const codeInput = m.querySelector('#gate-code');
+    const wrapName = m.querySelector('#wrap-gate-name');
+    const wrapPass = m.querySelector('#wrap-gate-pass');
+    const wrapCode = m.querySelector('#wrap-gate-code');
+    const wrapExisting = m.querySelector('#wrap-gate-existing');
+    const errorEl = m.querySelector('#gate-error');
+    const noteEl = m.querySelector('#gate-note');
+    const submitBtn = m.querySelector('#btn-gate-submit');
+
+    function showError(msg) {
+      if (!msg) {
+        errorEl.style.display = 'none';
+        errorEl.textContent = '';
+      } else {
+        errorEl.style.display = 'block';
+        errorEl.textContent = msg;
+        if (typeof SFX !== 'undefined') SFX.play('click');
+      }
+    }
+
+    m.querySelectorAll('.gate-tab').forEach(function (tabBtn) {
+      tabBtn.addEventListener('click', function () {
+        SFX.play('click');
+        m.querySelectorAll('.gate-tab').forEach(function (t) { t.classList.remove('active'); });
+        tabBtn.classList.add('active');
+        currentMode = tabBtn.dataset.gateTab;
+        showError('');
+
+        if (currentMode === 'register') {
+          wrapName.style.display = 'block';
+          wrapPass.style.display = 'block';
+          wrapCode.style.display = 'none';
+          if (wrapExisting) wrapExisting.style.display = 'none';
+          submitBtn.textContent = '별빛 등록하고 시작';
+          noteEl.innerHTML = '✨ 등록한 이름과 비밀번호는 나중에 <b>이어서 하기</b> 시 필요하므로 꼭 기억해주세요!';
+        } else if (currentMode === 'login') {
+          wrapName.style.display = 'block';
+          wrapPass.style.display = 'block';
+          wrapCode.style.display = 'none';
+          if (wrapExisting) wrapExisting.style.display = 'block';
+          submitBtn.textContent = '기록 불러와 이어서 하기';
+          noteEl.innerHTML = '🌟 등록했던 파수꾼 이름과 비밀번호를 입력하면 기존 진행 상황이 복원됩니다.';
+        } else if (currentMode === 'transfer') {
+          wrapName.style.display = 'none';
+          wrapPass.style.display = 'none';
+          wrapCode.style.display = 'block';
+          if (wrapExisting) wrapExisting.style.display = 'none';
+          submitBtn.textContent = '데이터 복원 및 로그인';
+          noteEl.innerHTML = '📲 다른 스마트폰이나 PC의 설정 메뉴에서 발급받은 인수인계 코드를 붙여넣으세요.';
+        }
+      });
+    });
+
+    m.querySelectorAll('.user-chip').forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        SFX.play('click');
+        nameInput.value = this.dataset.name;
+        passInput.focus();
+      });
+    });
+
+    m.querySelector('#gate-form').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      showError('');
+
+      if (currentMode === 'register') {
+        const name = nameInput.value.trim();
+        const pass = passInput.value.trim();
+        const res = await Auth.register(name, pass);
+        if (!res.ok) {
+          showError(res.error);
+          return;
+        }
+        SFX.init();
+        SFX.play('levelup');
+        closeModal();
+        toast(res.name + ' 파수꾼님, 환영합니다!');
+        Game.reloadFromAuth();
+      } else if (currentMode === 'login') {
+        const name = nameInput.value.trim();
+        const pass = passInput.value.trim();
+        const res = await Auth.login(name, pass);
+        if (!res.ok) {
+          showError(res.error);
+          return;
+        }
+        SFX.init();
+        SFX.play('levelup');
+        closeModal();
+        toast('어서오세요, ' + res.name + ' 파수꾼님! 별빛을 이어갑니다.');
+        Game.reloadFromAuth();
+      } else if (currentMode === 'transfer') {
+        const code = codeInput.value.trim();
+        const pass = passInput.value.trim();
+        const res = await Auth.importTransferCode(code, pass);
+        if (!res.ok) {
+          showError(res.error);
+          return;
+        }
+        SFX.init();
+        SFX.play('ascend');
+        closeModal();
+        toast('기기 인수인계 성공! ' + res.name + ' 파수꾼님, 환영합니다!');
+        Game.reloadFromAuth();
+      }
     });
   }
 
@@ -1051,6 +1279,8 @@ const UI = (function () {
     openRates: openRates,
     openOffline: openOffline,
     openWelcome: openWelcome,
+    openKeeperGate: openKeeperGate,
+    updateKeeperHUD: updateKeeperHUD,
     openTeacherLog: openTeacherLog,
     showTeacherReport: showTeacherReport,
     closeModal: closeModal,

@@ -52,9 +52,18 @@ var Game = (function () {
     };
   }
 
+  function getActiveSaveKey() {
+    if (typeof Auth !== 'undefined') {
+      const u = Auth.getCurrentUser();
+      if (u) return Auth.getSaveKeyForUser(u);
+    }
+    return SAVE_KEY;
+  }
+
   function load() {
     let raw = null;
-    try { raw = localStorage.getItem(SAVE_KEY); } catch (e) { raw = null; }
+    const key = getActiveSaveKey();
+    try { raw = localStorage.getItem(key); } catch (e) { raw = null; }
     if (!raw) return freshState();
 
     let data;
@@ -132,8 +141,9 @@ var Game = (function () {
   function save() {
     if (!state || resetting) return;
     state.lastSeen = Date.now();
+    const key = getActiveSaveKey();
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+      localStorage.setItem(key, JSON.stringify(state));
     } catch (e) { /* storage may be unavailable */ }
   }
 
@@ -812,6 +822,44 @@ var Game = (function () {
     };
   }
 
+  function reloadFromAuth() {
+    state = load();
+    partyPower();
+    if (typeof Battle !== 'undefined') {
+      Battle.syncParty();
+      if (state.tutorial) Battle.start();
+    }
+    if (window.UI) {
+      UI.refreshAll();
+      UI.updateKeeperHUD();
+    }
+    pendingOffline = computeOffline();
+    if (!state.tutorial) {
+      UI.openWelcome();
+    } else if (pendingOffline) {
+      setTimeout(function () { UI.openOffline(pendingOffline); }, 350);
+    }
+  }
+
+  function logout() {
+    save();
+    if (typeof Battle !== 'undefined') Battle.pause();
+    if (typeof Auth !== 'undefined') Auth.logout();
+    if (window.UI) {
+      UI.closeModal();
+      UI.updateKeeperHUD();
+      UI.openKeeperGate();
+    }
+  }
+
+  function getKeeperName() {
+    if (typeof Auth !== 'undefined') {
+      const u = Auth.getCurrentUser();
+      if (u) return u;
+    }
+    return '별의 파수꾼';
+  }
+
   const api = {
     get state() { return state; },
     currentStage: currentStage,
@@ -837,7 +885,10 @@ var Game = (function () {
     getGuideStep: getGuideStep,
     teacherLog: function () { return state ? state.reports.slice() : []; },
     reset: reset,
-    save: save
+    save: save,
+    reloadFromAuth: reloadFromAuth,
+    logout: logout,
+    getKeeperName: getKeeperName
   };
 
   function boot() {
@@ -851,14 +902,21 @@ var Game = (function () {
       document.getElementById('battle-canvas'),
       document.getElementById('battle-wrap')
     );
-    if (state.tutorial) Battle.start();
 
-    pendingOffline = computeOffline();
-    if (!state.tutorial) {
-      UI.openWelcome();
-    } else if (pendingOffline) {
-      offlineShown = true;
-      setTimeout(function () { UI.openOffline(pendingOffline); }, 450);
+    const currentUser = (typeof Auth !== 'undefined') ? Auth.getCurrentUser() : null;
+
+    if (!currentUser) {
+      // Prompt Name & Password Gate for authentication
+      UI.openKeeperGate();
+    } else {
+      if (state.tutorial) Battle.start();
+      pendingOffline = computeOffline();
+      if (!state.tutorial) {
+        UI.openWelcome();
+      } else if (pendingOffline) {
+        offlineShown = true;
+        setTimeout(function () { UI.openOffline(pendingOffline); }, 450);
+      }
     }
 
     bindPersistence();

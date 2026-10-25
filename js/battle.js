@@ -1073,9 +1073,14 @@ const Battle = (function () {
     UI.updateUltPct(0, false);
   }
 
+  function pause() {
+    started = false;
+  }
+
   return {
     init: init,
     start: start,
+    pause: pause,
     syncParty: syncParty,
     castUltimate: castUltimate,
     get stage() { return stage; },
