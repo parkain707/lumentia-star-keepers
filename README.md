@@ -4,10 +4,11 @@
 ---
 
 ## 🌐 영구 보장 글로벌 접속 주소 (Live URLs)
-- **⚡ 초단축 공식 링크 (영구 보장):** [https://is.gd/lumentia](https://is.gd/lumentia) *(단 17자)*
-- **🛡️ TinyURL 영구 보장 링크:** [https://tinyurl.com/lumentia-rpg](https://tinyurl.com/lumentia-rpg)
-- **🌍 원본 GitHub Pages URL:** [https://parkain707.github.io/lumentia-star-keepers/](https://parkain707.github.io/lumentia-star-keepers/)
-- **📱 모바일 QR 코드:** `lumentia-qrcode.png` (스마트폰 카메라로 스캔 즉시 접속)
+- **🌟 공식 독립 브랜드 웹 주소 (개인 계정 완전 은폐):** **[https://lumentia.vercel.app](https://lumentia.vercel.app)** *(주소창에 GitHub/개인ID 노출 0%)*
+- **⚡ 초단축 모바일 링크:** [https://is.gd/lumentia](https://is.gd/lumentia) *(단 17자)*
+- **🛡️ TinyURL 백업 링크:** [https://tinyurl.com/lumentia-rpg](https://tinyurl.com/lumentia-rpg)
+- **🌍 GitHub Pages 원본 호스팅:** [https://parkain707.github.io/lumentia-star-keepers/](https://parkain707.github.io/lumentia-star-keepers/)
+- **📱 모바일 QR 코드:** `lumentia-vercel-qr.png` (스마트폰 카메라로 스캔 즉시 접속)
 
 ---
 
