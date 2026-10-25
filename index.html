@@ -83,6 +83,22 @@
           </div>
         </div>
 
+        <!-- Challenge Pot & Cashout Bar (도전 금고 및 포기 수령) -->
+        <div id="pot-bar" class="pot-bar">
+          <div class="pot-info">
+            <span class="pot-icon" aria-hidden="true">💰</span>
+            <div class="pot-texts">
+              <span class="pot-label">도전 누적 미소 금고</span>
+              <b id="pot-amount" class="pot-amount">+0 미소</b>
+            </div>
+            <span id="pot-danger-tag" class="pot-danger-tag" hidden>⚠️ 상급 위험</span>
+          </div>
+          <div class="pot-controls">
+            <span id="daily-play-badge" class="daily-badge" title="오늘 남은 도전 기회">도전: 2/2</span>
+            <button id="btn-cashout" class="btn-cashout" type="button" disabled>🛡️ 멈추고 수령</button>
+          </div>
+        </div>
+
         <div class="battle-wrap" id="battle-wrap">
           <canvas id="battle-canvas"></canvas>
           <div class="battle-top">

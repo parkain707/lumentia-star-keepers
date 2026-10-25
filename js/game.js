@@ -19,6 +19,11 @@ var Game = (function () {
 
   /* ---------------- state ---------------- */
 
+  function getTodayStr() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
   function freshState() {
     const heroes = {};
     DEFAULT_PARTY.forEach(function (id) {
@@ -46,6 +51,9 @@ var Game = (function () {
       pity: 0,
       tutorial: false,
       sfx: true,
+      challengePot: 0,
+      challengeStreak: 0,
+      dailyPlays: { date: getTodayStr(), count: 0 },
       lastSeen: Date.now(),
       createdAt: Date.now(),
       pending: null
@@ -78,6 +86,14 @@ var Game = (function () {
     s.pity = Math.max(0, Math.min(GACHA.pity, Math.floor(num(data.pity, 0))));
     s.tutorial = !!data.tutorial;
     s.sfx = data.sfx !== false;
+    s.challengePot = Math.min(20000, Math.max(0, Math.floor(num(data.challengePot, 0))));
+    s.challengeStreak = Math.max(0, Math.floor(num(data.challengeStreak, 0)));
+    const today = getTodayStr();
+    if (data.dailyPlays && typeof data.dailyPlays === 'object' && data.dailyPlays.date === today) {
+      s.dailyPlays = { date: today, count: Math.max(0, Math.floor(num(data.dailyPlays.count, 0))) };
+    } else {
+      s.dailyPlays = { date: today, count: 0 };
+    }
     s.lastSeen = num(data.lastSeen, Date.now());
     s.createdAt = num(data.createdAt, Date.now());
 
@@ -567,19 +583,108 @@ var Game = (function () {
     }
 
     gold = smileCap(gold);
-    state.gold += gold;
-    state.stats.totalGold += gold;
+
+    // Accumulate into Challenge Pot!
+    const prevPot = state.challengePot || 0;
+    const addedPot = Math.min(20000 - prevPot, gold);
+    state.challengePot = Math.min(20000, prevPot + addedPot);
+    state.challengeStreak = (state.challengeStreak || 0) + 1;
     partyPower();
     save();
-    reportSmile(gold, '별길 클리어');
 
     if (window.UI) {
       UI.renderHUD();
+      UI.renderChallengePot();
       const missions = document.getElementById('screen-missions');
       if (missions && missions.classList.contains('active')) UI.renderMissions();
     }
 
-    return { gold: gold, gems: gems, shards: shards };
+    return {
+      gold: addedPot,
+      pot: state.challengePot,
+      gems: gems,
+      shards: shards,
+      isHard: state.challengePot >= 2500
+    };
+  }
+
+  function checkDailyPlays() {
+    if (!state) return { available: 0, max: 2, canPlay: false, used: 2 };
+    const today = getTodayStr();
+    if (!state.dailyPlays || state.dailyPlays.date !== today) {
+      state.dailyPlays = { date: today, count: 0 };
+    }
+    const used = state.dailyPlays.count || 0;
+    const available = Math.max(0, 2 - used);
+    return {
+      available: available,
+      used: used,
+      max: 2,
+      canPlay: available > 0
+    };
+  }
+
+  function consumeDailyPlay() {
+    if (!state) return false;
+    const status = checkDailyPlays();
+    if (!status.canPlay) return false;
+    state.dailyPlays.count = (state.dailyPlays.count || 0) + 1;
+    save();
+    if (window.UI) UI.updateDailyBadge();
+    return true;
+  }
+
+  function getChallengePot() {
+    return state ? (state.challengePot || 0) : 0;
+  }
+
+  function getDifficultyMultiplier() {
+    if (!state) return { hpMult: 1, atkMult: 1, isHard: false, pot: 0 };
+    const pot = state.challengePot || 0;
+    if (pot < 2500) {
+      return { hpMult: 1.0, atkMult: 1.0, isHard: false, pot: pot };
+    }
+    // 2500 미소부터 점점 어려워짐!
+    const excess = pot - 2500;
+    const ramp = excess / 2500;
+    const hpMult = 1.4 + ramp * 0.85;
+    const atkMult = 1.25 + ramp * 0.45;
+    return {
+      hpMult: Math.min(10, hpMult),
+      atkMult: Math.min(6, atkMult),
+      isHard: true,
+      pot: pot
+    };
+  }
+
+  function cashoutChallengePot() {
+    if (!state || (state.challengePot || 0) <= 0) return { ok: false, amount: 0 };
+    const amount = state.challengePot;
+    state.challengePot = 0;
+    state.challengeStreak = 0;
+    state.gold += amount;
+    state.stats.totalGold += amount;
+    partyPower();
+    save();
+    reportSmile(amount, '도전 포기 수령');
+    if (window.UI) {
+      UI.renderHUD();
+      UI.renderChallengePot();
+      UI.openTeacherCertificate(amount);
+    }
+    return { ok: true, amount: amount };
+  }
+
+  function failChallengePot() {
+    if (!state) return { lost: 0 };
+    const lost = state.challengePot || 0;
+    state.challengePot = 0;
+    state.challengeStreak = 0;
+    save();
+    if (window.UI) {
+      UI.renderChallengePot();
+    }
+    return { lost: lost };
   }
 
   /* ---------------- achievements ---------------- */
@@ -888,7 +993,13 @@ var Game = (function () {
     save: save,
     reloadFromAuth: reloadFromAuth,
     logout: logout,
-    getKeeperName: getKeeperName
+    getKeeperName: getKeeperName,
+    checkDailyPlays: checkDailyPlays,
+    consumeDailyPlay: consumeDailyPlay,
+    getChallengePot: getChallengePot,
+    getDifficultyMultiplier: getDifficultyMultiplier,
+    cashoutChallengePot: cashoutChallengePot,
+    failChallengePot: failChallengePot
   };
 
   function boot() {
