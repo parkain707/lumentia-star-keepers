@@ -608,13 +608,33 @@ var Game = (function () {
     };
   }
 
+  const DEVICE_DAILY_KEY = 'starlight_device_daily_v1_';
+
+  function getDeviceDailyUsed(todayStr) {
+    try {
+      const val = localStorage.getItem(DEVICE_DAILY_KEY + todayStr);
+      return val ? Math.max(0, parseInt(val, 10) || 0) : 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  function setDeviceDailyUsed(todayStr, count) {
+    try {
+      localStorage.setItem(DEVICE_DAILY_KEY + todayStr, String(count));
+    } catch (e) {}
+  }
+
   function checkDailyPlays() {
     if (!state) return { available: 0, max: 2, canPlay: false, used: 2 };
     const today = getTodayStr();
     if (!state.dailyPlays || state.dailyPlays.date !== today) {
       state.dailyPlays = { date: today, count: 0 };
     }
-    const used = state.dailyPlays.count || 0;
+    const userUsed = state.dailyPlays.count || 0;
+    const deviceUsed = getDeviceDailyUsed(today);
+    // 계정을 새로 만들어도 기기/브라우저 기준으로 2회 초과 불가!
+    const used = Math.max(userUsed, deviceUsed);
     const available = Math.max(0, 2 - used);
     return {
       available: available,
@@ -628,30 +648,34 @@ var Game = (function () {
     if (!state) return false;
     const status = checkDailyPlays();
     if (!status.canPlay) return false;
-    state.dailyPlays.count = (state.dailyPlays.count || 0) + 1;
+    const newCount = status.used + 1;
+    const today = getTodayStr();
+    state.dailyPlays = { date: today, count: newCount };
+    setDeviceDailyUsed(today, newCount);
     save();
     if (window.UI) UI.updateDailyBadge();
     return true;
   }
 
   function getChallengePot() {
-    return state ? (state.challengePot || 0) : 0;
+    return state ? Math.min(20000, Math.max(0, state.challengePot || 0)) : 0;
   }
 
   function getDifficultyMultiplier() {
     if (!state) return { hpMult: 1, atkMult: 1, isHard: false, pot: 0 };
-    const pot = state.challengePot || 0;
+    const pot = Math.min(20000, Math.max(0, state.challengePot || 0));
     if (pot < 2500) {
       return { hpMult: 1.0, atkMult: 1.0, isHard: false, pot: pot };
     }
-    // 2500 미소부터 점점 어려워짐!
+    // 🔥 2,500 미소 이상 구간: '통곡의 벽' 극악 난이도 발동!
+    // 2500 미소부터는 몬스터 체력 3.0배, 공격력 2.5배에서 급격히 증가하여 일반 파티는 버틸 수 없음
     const excess = pot - 2500;
-    const ramp = excess / 2500;
-    const hpMult = 1.4 + ramp * 0.85;
-    const atkMult = 1.25 + ramp * 0.45;
+    const ramp = excess / 600;
+    const hpMult = 3.2 + ramp * 3.5;
+    const atkMult = 2.6 + ramp * 2.8;
     return {
-      hpMult: Math.min(10, hpMult),
-      atkMult: Math.min(6, atkMult),
+      hpMult: Math.min(60, hpMult),
+      atkMult: Math.min(40, atkMult),
       isHard: true,
       pot: pot
     };

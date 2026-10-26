@@ -1088,7 +1088,11 @@ const Battle = (function () {
         return false;
       }
       if (Game.getChallengePot() === 0) {
-        Game.consumeDailyPlay();
+        const ok = Game.consumeDailyPlay();
+        if (!ok) {
+          if (window.UI) UI.openDailyLimitModal();
+          return false;
+        }
       }
     }
     started = true;

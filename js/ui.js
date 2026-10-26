@@ -860,7 +860,10 @@ const UI = (function () {
     const highestStage = (state && typeof state.highest === 'number') ? (state.highest + 1) : 1;
     const log = (typeof Game !== 'undefined') ? Game.teacherLog().slice().reverse() : [];
     const recentSum = log.reduce(function (s, r) { return s + (r.amount || 0); }, 0);
-    const claimAmount = targetAmount || (recentSum > 0 ? recentSum : currentGold);
+    
+    // 🔥 최대 20,000 미소 절대 상한 강제 적용!
+    const rawClaim = targetAmount || (recentSum > 0 ? recentSum : currentGold);
+    const claimAmount = Math.max(0, Math.min(20000, Math.floor(Number(rawClaim) || 0)));
 
     const now = new Date();
     const yyyy = now.getFullYear();
@@ -869,9 +872,20 @@ const UI = (function () {
     const hh = String(now.getHours()).padStart(2, '0');
     const min = String(now.getMinutes()).padStart(2, '0');
     const dateStr = yyyy + '. ' + mm + '. ' + dd + ' ' + hh + ':' + min;
+    const dateYMD = yyyy + mm + dd;
 
-    const saltCode = Math.abs((keeper.split('').reduce(function (a, c) { return a + c.charCodeAt(0); }, 0) * 17 + now.getTime()) % 65535).toString(16).toUpperCase().padStart(4, '0');
-    const verifyCode = 'LMN-CERT-' + saltCode + '-' + Math.floor(1000 + Math.random() * 9000);
+    // 🔥 학생들의 텍스트/화면 위조를 원천 차단하는 교사용 암호화 체크섬 (이름+날짜+금액 연동)
+    function computeChecksum(name, date, amt) {
+      const str = 'LMN2026_SHIELD_' + name + '_' + date + '_' + amt;
+      let h = 0x811c9dc5;
+      for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 0x01000193);
+      }
+      return ('000000' + (h >>> 0).toString(16).toUpperCase()).slice(-6);
+    }
+    const signHex = computeChecksum(keeper, dateYMD, claimAmount);
+    const verifyCode = 'LMN-' + dateYMD + '-' + signHex;
 
     const copyText = 
       '📜 [루멘티아: 별의 파수꾼] 미소 보상 지급 청구서\n\n' +
