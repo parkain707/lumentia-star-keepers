@@ -2652,3 +2652,92 @@ p, h1, h2, h3 { margin: 0; }
     transition-duration: .001s !important;
   }
 }
+
+
+/* =========================================================
+   PROMINENT CERTIFICATE QUICK BUTTON & NAV TAB
+   ========================================================= */
+.main-cert-container {
+  flex: 0 0 auto;
+  margin: 10px 14px 4px;
+}
+
+.btn-top-cert {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(255, 212, 121, 0.25) 0%, rgba(138, 116, 249, 0.28) 100%);
+  border: 1.8px solid rgba(255, 212, 121, 0.65);
+  border-radius: 16px;
+  box-shadow: 0 4px 18px rgba(255, 212, 121, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  transition: transform .15s, box-shadow .15s, border-color .15s;
+  text-align: left;
+}
+
+.btn-top-cert:hover {
+  transform: translateY(-1px);
+  border-color: #ffd479;
+  box-shadow: 0 6px 22px rgba(255, 212, 121, 0.32);
+}
+
+.btn-top-cert:active {
+  transform: scale(0.98);
+}
+
+.cert-emoji {
+  font-size: 26px;
+  flex: 0 0 auto;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.4));
+  animation: certBounce 2.5s infinite ease-in-out;
+}
+
+@keyframes certBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px) scale(1.08); }
+}
+
+.cert-desc-box {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cert-highlight-title {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: #fff2cf;
+  letter-spacing: -0.2px;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+}
+
+.cert-highlight-desc {
+  font-size: 11px;
+  color: #cbd5e1;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cert-badge-action {
+  flex: 0 0 auto;
+  background: #ffd479;
+  color: #1a1500;
+  font-size: 11.5px;
+  font-weight: 800;
+  padding: 6px 11px;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+
+.nav-btn-cert {
+  color: #ffd479 !important;
+}
+
+.nav-btn-cert svg {
+  filter: drop-shadow(0 0 6px rgba(255, 212, 121, 0.5));
+}

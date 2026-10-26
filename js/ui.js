@@ -143,6 +143,13 @@ const UI = (function () {
       SFX.play('click');
       openGuide();
     });
+    const topCertBtn = document.getElementById('btn-top-cert');
+    if (topCertBtn) {
+      topCertBtn.addEventListener('click', function () {
+        SFX.play('click');
+        openTeacherCertificate();
+      });
+    }
     if (els.teacherReport) {
       els.teacherReport.addEventListener('click', function () {
         SFX.play('click');
@@ -227,6 +234,10 @@ const UI = (function () {
   /* ---------------- tabs ---------------- */
 
   function showTab(tab) {
+    if (tab === 'cert') {
+      openTeacherCertificate();
+      return;
+    }
     currentTab = tab;
     document.querySelectorAll('.screen').forEach(function (s) {
       s.classList.toggle('active', s.dataset.screen === tab);
