@@ -283,6 +283,7 @@ const UI = (function () {
     }
     if (els.potBar) {
       els.potBar.classList.toggle('danger', pot >= 2500);
+      els.potBar.classList.toggle('has-pot', pot > 0);
     }
     updateDailyBadge();
   }
