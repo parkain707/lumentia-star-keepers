@@ -872,8 +872,9 @@ const UI = (function () {
     const log = (typeof Game !== 'undefined') ? Game.teacherLog().slice().reverse() : [];
     const recentSum = log.reduce(function (s, r) { return s + (r.amount || 0); }, 0);
     
-    // 🔥 최대 20,000 미소 절대 상한 강제 적용!
-    const rawClaim = targetAmount || (recentSum > 0 ? recentSum : currentGold);
+    // 🔥 하루(1일) 학생 1명당 최대 20,000 미소 절대 상한 강제 적용!
+    const dailyClaimed = (typeof Game !== 'undefined' && Game.getDailyRewardClaimed) ? Game.getDailyRewardClaimed() : 0;
+    const rawClaim = targetAmount || (dailyClaimed > 0 ? dailyClaimed : (recentSum > 0 ? recentSum : currentGold));
     const claimAmount = Math.max(0, Math.min(20000, Math.floor(Number(rawClaim) || 0)));
 
     const now = new Date();
@@ -901,15 +902,16 @@ const UI = (function () {
     const copyText = 
       '📜 [루멘티아: 별의 파수꾼] 미소 보상 지급 청구서\n\n' +
       '선생님, 안녕하세요! ✨\n' +
-      '별의 파수꾼 [' + keeper + '] 학생이 루멘티아 별길을 성실하게 탐험하여 정직하게 미소를 모았습니다.\n' +
-      '약속하신 미소 보상을 파수꾼에게 기쁜 마음으로 지급해 주세요!\n\n' +
+      '별의 파수꾼 [' + keeper + '] 학생이 루멘티아 별길을 성실하게 탐험하여 오늘 미소를 모았습니다.\n\n' +
       '⭐ 파수꾼 성명: ' + keeper + '\n' +
-      '⭐ 청구 미소: +' + fmt(claimAmount) + ' 미소\n' +
-      '⭐ 현재 보유: ' + fmt(currentGold) + ' 미소\n' +
+      '⭐ 오늘(1일) 총 청구 미소: +' + fmt(claimAmount) + ' 미소\n' +
+      '⭐ 1일 총 지급 한도: 최대 20,000 미소 (엄격 준수)\n' +
       '⭐ 최고 도달: 제 ' + highestStage + ' 성좌\n' +
       '⭐ 발급 일시: ' + dateStr + '\n' +
-      '⭐ 인증 번호: ' + verifyCode + '\n\n' +
-      '"정직하고 착하게 모은 미소를 칭찬과 함께 선물해 주세요!"\n' +
+      '⭐ 공식 인증번호: ' + verifyCode + '\n\n' +
+      '※ [선생님 확인 안내]\n' +
+      '· 학생 1명당 하루(1일) 지급 가능한 총 미소는 최대 20,000 미소입니다.\n' +
+      '· 오늘 2회 플레이를 모두 합쳐도 총 20,000 미소를 초과하여 수령할 수 없습니다.\n' +
       '👉 루멘티아 바로가기: https://lumentia.vercel.app';
 
     const m = modal(
@@ -941,7 +943,7 @@ const UI = (function () {
 
             '<div class="cert-grid">' +
               '<div class="cert-stat-box highlight">' +
-                '<span class="stat-label">청구 미소</span>' +
+                '<span class="stat-label">오늘(1일) 총 청구 미소</span>' +
                 '<b class="stat-val gold">+' + fmt(claimAmount) + ' <i class="unit">미소</i></b>' +
               '</div>' +
               '<div class="cert-stat-box">' +

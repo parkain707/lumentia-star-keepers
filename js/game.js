@@ -625,6 +625,36 @@ var Game = (function () {
     } catch (e) {}
   }
 
+  const DEVICE_DAILY_REWARD_KEY = 'starlight_device_daily_reward_v1_';
+
+  function getDailyRewardClaimed() {
+    const today = getTodayStr();
+    let dev = 0;
+    try {
+      const v = localStorage.getItem(DEVICE_DAILY_REWARD_KEY + today);
+      dev = v ? Math.max(0, parseInt(v, 10) || 0) : 0;
+    } catch (e) {}
+    let user = 0;
+    if (state && state.dailyReward && state.dailyReward.date === today) {
+      user = Math.max(0, Math.floor(state.dailyReward.amount || 0));
+    }
+    return Math.min(20000, Math.max(dev, user));
+  }
+
+  function addDailyRewardClaimed(amount) {
+    const today = getTodayStr();
+    const cur = getDailyRewardClaimed();
+    const updated = Math.min(20000, cur + Math.max(0, Math.floor(amount)));
+    try {
+      localStorage.setItem(DEVICE_DAILY_REWARD_KEY + today, String(updated));
+    } catch (e) {}
+    if (state) {
+      state.dailyReward = { date: today, amount: updated };
+      save();
+    }
+    return updated;
+  }
+
   function checkDailyPlays() {
     if (!state) return { available: 0, max: 2, canPlay: false, used: 2 };
     const today = getTodayStr();
@@ -683,18 +713,26 @@ var Game = (function () {
 
   function cashoutChallengePot() {
     if (!state || (state.challengePot || 0) <= 0) return { ok: false, amount: 0 };
-    const amount = state.challengePot;
+    const curDaily = getDailyRewardClaimed();
+    const remainingLimit = Math.max(0, 20000 - curDaily);
+    
+    // 🔥 하루(1일) 전체 20,000 미소 한도를 엄격하게 제한!
+    const amount = Math.min(state.challengePot, remainingLimit);
     state.challengePot = 0;
     state.challengeStreak = 0;
-    state.gold += amount;
-    state.stats.totalGold += amount;
+    
+    if (amount > 0) {
+      addDailyRewardClaimed(amount);
+      state.gold += amount;
+      state.stats.totalGold += amount;
+    }
     partyPower();
     save();
     reportSmile(amount, '도전 포기 수령');
     if (window.UI) {
       UI.renderHUD();
       UI.renderChallengePot();
-      UI.openTeacherCertificate(amount);
+      UI.openTeacherCertificate(getDailyRewardClaimed());
     }
     return { ok: true, amount: amount };
   }
@@ -1021,6 +1059,8 @@ var Game = (function () {
     checkDailyPlays: checkDailyPlays,
     consumeDailyPlay: consumeDailyPlay,
     getChallengePot: getChallengePot,
+    getDailyRewardClaimed: getDailyRewardClaimed,
+    addDailyRewardClaimed: addDailyRewardClaimed,
     getDifficultyMultiplier: getDifficultyMultiplier,
     cashoutChallengePot: cashoutChallengePot,
     failChallengePot: failChallengePot
