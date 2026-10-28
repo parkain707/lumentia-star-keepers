@@ -2,13 +2,27 @@
 (function(){
   const $ = id => document.getElementById(id);
   const endpoint = location.hostname === '127.0.0.1' ? '/api/rewards-review' : 'https://ympmjggfpinvcfrfwmgg.supabase.co/functions/v1/lumentia-rewards';
-  let session=null, records=[], audit=[], prior=[], priorAllocations=[], students=[], configured=true, selected=null, busy=false, view='new';
+  let session=null, records=[], audit=[], prior=[], priorAllocations=[], students=[], configured=true, selected=null, busy=false, view='new', matchedStudentId=null;
   try { session=JSON.parse(sessionStorage.getItem('lumentia_teacher_session')); } catch(e) {}
   const money = n => Math.max(0,Number(n)||0).toLocaleString('ko-KR')+' 미소';
   const escape = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const time = t => new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',dateStyle:'short',timeStyle:'short'}).format(new Date(t));
   const labels = {unsubmitted:'클래스톡 인증서 확인 필요',requested:'학생이 인증서를 보냈다고 해요',received:'인증서 확인했어요 · 보상 줄 차례',partial:'일부 보상을 줬어요',paid:'보상을 모두 줬어요',expired:'인증서 제출 기한이 지났어요'};
   function message(text) { $('message').textContent=text; }
+  $('find-certificate').addEventListener('click',function(){
+    const text=$('certificate-text').value;
+    const number=text.match(/학생 번호\s*:\s*([a-f0-9-]+)/i);
+    const settlements=text.match(/정산 번호\s*:\s*([^\r\n]+)/);
+    if(!number || !settlements){$('lookup-result').textContent='인증서의 학생 번호와 정산 번호가 포함되도록 전체 내용을 붙여넣어 주세요.';return;}
+    const ids=settlements[1].split(',').map(s=>s.trim());
+    const matches=records.filter(r=>r.studentId.startsWith(number[1].toLowerCase()) && ids.includes(r.settlementId));
+    if(!matches.length){$('lookup-result').textContent='연결된 기록을 찾지 못했어요. ‘최신 내용 확인’을 누르고, 학생에게 게임 접속을 부탁해 주세요.';return;}
+    const owners=new Set(matches.map(r=>r.studentId));
+    if(owners.size!==1){$('lookup-result').textContent='한 학생의 인증서 내용만 붙여넣어 주세요.';return;}
+    const unpaid=matches.some(r=>r.remaining>0 && r.status!=='expired');
+    view=unpaid?'new':'history';matchedStudentId=matches[0].studentId;$('filter').value='all';$('search').value=matches[0].studentName;draw();
+    $('lookup-result').textContent=matches[0].studentName+' 학생을 찾았어요. '+(unpaid?'아래 인증서를 확인하고 지급한 보상을 기록해 주세요.':'이미 지급했거나 기한이 지난 기록이에요. 같은 보상을 다시 지급하지 마세요.');
+  });
   function loginMode() {
     $('login-title').textContent=configured?'선생님 로그인':'선생님 계정 최초 설정';
     $('login-description').textContent=configured?'등록한 선생님 이메일과 비밀번호로 로그인하세요. 학생 계정의 로그인 상태와 별도로 이용할 수 있습니다.':'전달받은 일회용 설정 키로 선생님 비밀번호를 직접 설정하세요. 설정을 마치면 이 키는 폐기됩니다.';
@@ -19,8 +33,9 @@
   }
   function signedOut() {
     session=null; sessionStorage.removeItem('lumentia_teacher_session');
-    records=[]; audit=[]; prior=[]; priorAllocations=[]; students=[]; selected=null;
+    records=[]; audit=[]; prior=[]; priorAllocations=[]; students=[]; selected=null; matchedStudentId=null;
     $('action-dialog').close(); $('records').replaceChildren(); $('prior-payments').replaceChildren();
+    $('certificate-text').value=''; $('lookup-result').textContent='';
     $('account').textContent=''; $('dashboard').hidden=true; $('login-panel').hidden=false; $('logout').hidden=true; loginMode();
   }
   async function api(action,data={}) {
@@ -67,7 +82,7 @@
         (!connected?'<details class="history manual-link"><summary>게임 별명이 다를 때만 직접 연결</summary><p>이 학생이 게임에서 쓰는 이름과 인증서의 학생 번호를 먼저 확인해 주세요.</p>'+(students.length?'<button class="secondary" data-bind="'+p.id+'">'+escape(p.student_name)+' 학생의 게임 이름 찾기</button>':'<p class="muted">아직 연결할 게임 계정이 없어요. 먼저 학생에게 게임 접속을 부탁해 주세요.</p>')+'</details>':'')+'</article>';
     }).join('');
     const term=$('search').value.trim().toLowerCase(), filter=$('filter').value;
-    const visible=(view==='history'?records:pending).filter(r=>(r.studentName+' '+r.studentId+' '+r.settlementId).toLowerCase().includes(term) &&
+    const visible=(view==='history'?records:pending).filter(r=>(!matchedStudentId || r.studentId===matchedStudentId) && (r.studentName+' '+r.studentId+' '+r.settlementId).toLowerCase().includes(term) &&
       (view!=='history' || filter==='all' || (filter==='paid'?r.status==='paid':r.status==='expired')));
     $('records').innerHTML=visible.map(r=>{
       const history=audit.filter(a=>a.claim_id===r.id);
@@ -139,8 +154,8 @@
     finally { busy=false; $('confirm-action').disabled=false; }
   });
   $('pay-amount').addEventListener('input',()=>$('confirm-action').textContent=money($('pay-amount').value)+' 보상 줬어요 · 기록하기');
-  ['new','prior','history'].forEach(v=>$('tab-'+v).addEventListener('click',()=>{view=v;$('search').value='';message('');draw();}));
-  $('search').addEventListener('input',draw); $('filter').addEventListener('change',draw);
+  ['new','prior','history'].forEach(v=>$('tab-'+v).addEventListener('click',()=>{view=v;matchedStudentId=null;$('search').value='';message('');draw();}));
+  $('search').addEventListener('input',()=>{matchedStudentId=null;draw();}); $('filter').addEventListener('change',draw);
   $('login-form').addEventListener('submit',async event=>{
     event.preventDefault(); if(busy)return; busy=true; $('login-button').disabled=true;
     try {

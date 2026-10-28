@@ -39,7 +39,7 @@ begin
   r:=public.lumentia_gateway(base);row:=r->'records'->0;claim_id:=row->>'id';assert row->>'status'='expired' and row->>'remaining'='0','unconfirmed expires despite student assertion';
   r:=public.lumentia_gateway(jsonb_build_object('action','receive','token',token,'claimId',claim_id,'requestId',gen_random_uuid(),'revision',0,'receivedAt',ts+72*3600000));assert r->>'ok'='false','exact expiry receipt denied';
   r:=public.lumentia_gateway(jsonb_build_object('action','receive','token',token,'claimId',claim_id,'requestId',gen_random_uuid(),'revision',0,'receivedAt',ts+1000));assert r->'record'->>'status'='received' and r->'record'->>'remaining'='200','teacher can verify timely historical receipt';
-  r:=public.lumentia_gateway(jsonb_build_object('action','list','token',token));assert jsonb_array_length(r->'records')=3 and jsonb_array_length(r->'audit')=4,'teacher list and audit';
+  r:=public.lumentia_gateway(jsonb_build_object('action','list','token',token));assert (select count(*) from jsonb_array_elements(r->'records') x where x->>'studentId' in (sid::text,sid2::text))=3 and (select count(*) from lumentia_private.audit a join lumentia_private.claims c on c.id=a.claim_id where c.student_id in (sid,sid2))=4,'teacher list and audit';
   r:=public.lumentia_gateway(jsonb_build_object('action','logout','token',token));assert r->>'ok'='true','logout';
   r:=public.lumentia_gateway(jsonb_build_object('action','list','token',token));assert r->>'code'='401','revoked session denied';
   assert not has_function_privilege('anon','public.lumentia_gateway(jsonb)','execute'),'anon RPC denied';

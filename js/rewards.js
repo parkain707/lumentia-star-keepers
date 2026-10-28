@@ -3,8 +3,9 @@
 // Reward ledger only. Hero/growth saves remain in the existing local slots.
 var Rewards = (function () {
   const ENDPOINT = typeof location !== 'undefined' && location.hostname === '127.0.0.1' ? '/api/rewards-review' : 'https://ympmjggfpinvcfrfwmgg.supabase.co/functions/v1/lumentia-rewards';
-  let flight = null, error = '', lastSync = 0;
+  let flight = null, flightOwner = null, flightSignature = null, error = '', lastSync = 0;
   const caches = new Map();
+  const uploaded = new Map();
   function identity() { return typeof Auth !== 'undefined' ? Auth.getRewardIdentity() : null; }
   function cached() {
     const id = identity();
@@ -31,7 +32,6 @@ var Rewards = (function () {
   async function sync() {
     const id = identity();
     if (!id || typeof Game === 'undefined' || !Game.state) return {ok:false};
-    if (flight) return flight;
     const name = Auth.getCurrentUser();
     const records = [];
     Object.keys(Game.state.rewardDays).sort().slice(-90).forEach(function(date) {
@@ -40,10 +40,20 @@ var Rewards = (function () {
         if (r.outcome === 'cashed_out' && amount > 0) records.push({id:r.id,date:date,amount:amount,t:r.t,requestedAt:r.claimedAt || 0});
       });
     });
+    const signature = JSON.stringify(records);
+    if (flight) {
+      if (flightOwner === id.id && flightSignature === signature) return flight;
+      return flight.then(function(){
+        if (Auth.getCurrentUser() !== name || identity()?.id !== id.id) return {ok:false};
+        return sync();
+      });
+    }
+    const outgoing = uploaded.get(id.id) === signature ? [] : records;
+    flightOwner = id.id; flightSignature = signature;
     flight = (async function() {
       try {
         const response = await fetch(ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({action:'sync',studentId:id.id,secret:id.secret,name:name,records:records}),signal:AbortSignal.timeout(20000)});
+          body:JSON.stringify({action:'sync',studentId:id.id,secret:id.secret,name:name,records:outgoing}),signal:AbortSignal.timeout(20000)});
         const result = await response.json();
         if (!response.ok || !result.ok) throw new Error(result.error || '보상 기록 연결을 완료하지 못했습니다.');
         // A response for an old account must never appear in a newly selected account.
@@ -53,10 +63,12 @@ var Rewards = (function () {
         caches.set(id.id,value);
         try { localStorage.setItem('lumentia_rewards_'+id.id,JSON.stringify(value)); } catch(e) {}
         lastSync=Date.now();error='';
+        if (!result.rejected || !result.rejected.length) uploaded.set(id.id,signature);
+        else uploaded.delete(id.id);
         if (!previous || JSON.stringify(previous.records)!==JSON.stringify(value.records)) window.dispatchEvent(new Event('lumentia-rewards'));
         return {ok:true,rejected:result.rejected};
       } catch(e) { error=e.name==='TimeoutError'?'연결 시간이 초과되었습니다. 다시 확인해 주세요.':e.message;return {ok:false,error:error}; }
-      finally { flight=null; }
+      finally { flight=null; flightOwner=null; flightSignature=null; }
     })();
     return flight;
   }

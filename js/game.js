@@ -681,7 +681,7 @@ var Game = (function () {
     if (!state || !Array.isArray(ids)) return false;
     const before = JSON.stringify(state);
     Challenge.expire(state);
-    const eligible = Challenge.entry(state, date).records.filter(function (r) { return ids.indexOf(r.id) >= 0 && r.amount > 0 && !r.claimedAt; });
+    const eligible = Challenge.entry(state, date).records.filter(function (r) { return ids.indexOf(r.id) >= 0 && r.amount > 0; });
     if (!ids.length || eligible.length !== ids.length) return false;
     eligible.forEach(function (r) { if (!r.copiedAt) r.copiedAt = Date.now(); });
     if (save()) { if (typeof Rewards !== 'undefined') Rewards.sync(); return true; }
@@ -880,10 +880,14 @@ var Game = (function () {
   function getGuideStep() {
     if (!state) return null;
     const active = state.run && state.run.status === 'active';
+    Challenge.expire(state);
     const dates = Object.keys(state.rewardDays).sort().reverse();
     const pendingDate = dates.find(function (date) {
-      Challenge.expire(state);
-      return state.rewardDays[date].records.some(function (r) { return r.amount > 0 && !r.claimedAt; });
+      return state.rewardDays[date].records.some(function (r) {
+        if (r.amount <= 0 || r.claimedAt) return false;
+        const row = typeof Rewards !== 'undefined' ? Rewards.decorate(r) : r;
+        return (row.outstanding == null ? row.amount : row.outstanding) > 0 && !row.receivedAt && row.ledgerStatus !== 'requested';
+      });
     });
     const hasCashedOut = dates.some(function (date) { return state.rewardDays[date].records.some(function (r) { return r.outcome === 'cashed_out' && (r.amount > 0 || r.expiredAmount > 0); }); });
     if (!active && state.freeTen) return {id:'summon_free', title:'1 / 5 · 동행 만나기', desc:'먼저 무료로 동행 10명을 만나보세요. 도전 횟수는 줄어들지 않아요.', action:'무료 동행 만나기', tab:'summon', target:'free_summon', focus:'btn-free-ten'};

@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>루멘티아 · 선생님 보상 관리</title><link rel="stylesheet" href="/teacher/style.css"></head>
 <body><main>
-  <header><div><p class="eyebrow">LUMENTIA · TEACHER</p><h1>선생님 보상 관리</h1><p>인증서를 확인하고, 학생에게 준 보상을 기록하는 곳이에요.</p></div><div class="header-account"><a href="/">학생 게임으로</a><button id="logout" class="secondary" hidden>관리자 로그아웃</button></div></header>
+  <header><div><p class="eyebrow">LUMENTIA · TEACHER</p><h1>선생님 보상 관리</h1><p>클래스톡으로 인증서를 받은 뒤, 지급 기록을 남길 때 이용하세요.</p></div><div class="header-account"><a href="/">학생 게임으로</a><button id="logout" class="secondary" hidden>관리자 로그아웃</button></div></header>
   <p id="message" role="status" aria-live="polite"></p>
   <section id="login-panel" class="panel narrow"><h2 id="login-title">선생님 로그인</h2><p id="login-description">선생님 계정으로 로그인해야 학생별 보상 기록을 볼 수 있습니다.</p>
     <form id="login-form"><label>이메일<input id="email" type="email" autocomplete="username" required></label>
@@ -16,6 +16,7 @@
     <section id="prior-panel" class="panel" hidden><h2>이미 준 보상은 다시 주지 않으셔도 돼요</h2><p id="prior-summary"></p><div id="prior-help" class="notice"></div><div id="prior-payments"></div></section>
     <section id="records-panel" class="panel"><h2 id="records-title">새로 보상 줄 학생</h2><p id="records-help">클래스톡에 인증서가 도착한 학생만 처리해 주세요. 학생이 게임에서 ‘보냈어요’를 눌러도 실제 도착 여부는 선생님이 확인해야 해요.</p>
       <div class="filters"><label>학생 찾기<input id="search" type="search" placeholder="학생 이름으로 찾기"></label><label id="filter-label" hidden>지난 기록 보기<select id="filter"><option value="all">전체 기록</option><option value="paid">보상을 준 기록</option><option value="expired">제출 기한이 지난 기록</option></select></label></div>
+      <details class="certificate-lookup"><summary>게임 이름을 모르겠다면, 클래스톡 인증서로 찾기</summary><label>클래스톡에서 받은 인증서 내용<textarea id="certificate-text" rows="4" placeholder="학생이 클래스톡으로 보낸 인증서 내용을 복사해 붙여넣으세요."></textarea></label><button id="find-certificate" type="button" class="secondary">이 인증서의 학생 찾기</button><p id="lookup-result" class="muted" role="status"></p></details>
       <div id="records"></div>
     </section>
     <details class="panel compact-details"><summary>전체 금액과 기록은 어떻게 계산하나요?</summary><p class="muted">게임에 연결된 계정의 획득 금액과 이전에 지급하신 금액은 집계 대상이 달라요. 학생별 내역을 기준으로 확인해 주세요. 영웅과 성장 미소는 이 화면의 지급 처리로 줄어들지 않아요.</p><dl class="totals"><div><dt>게임에 연결된 계정의 누적 보상</dt><dd id="total-earned">0</dd></div><div><dt>인증서를 아직 확인하지 않은 금액</dt><dd id="total-unconfirmed">0</dd></div><div><dt>인증서 확인 후 아직 주지 않은 금액</dt><dd id="total-pending">0</dd></div><div><dt>이전 지급분을 포함해 이미 준 금액</dt><dd id="total-paid">0</dd></div></dl></details>

@@ -880,8 +880,8 @@ const UI = (function () {
   function openSyncNotice() {
     const m = modal('<div class="modal-head"><h2>다른 탭에서 여정을 이어가고 있어요</h2></div>' +
       '<p class="info-note">기록이 겹치지 않도록 이 탭을 멈췄습니다. 다른 게임 탭을 닫은 뒤 여기서 이어서 진행하세요.</p>' +
-      '<a href="/teacher" class="teacher-entry">선생님 관리 화면으로 이동</a>' +
-      '<button class="btn-primary" id="resume-this-tab">이 탭에서 이어서 진행</button>', {sticky: true});
+      '<button class="btn-primary" id="resume-this-tab">이 탭에서 이어서 진행</button>' +
+      '<div class="gate-teacher-footer"><a href="/teacher" class="teacher-quiet-link">선생님 관리</a></div>', {sticky: true});
     m.querySelector('#resume-this-tab').addEventListener('click', function () { closeModal(); Game.reloadFromAuth(); });
   }
   function openBalanceAdjustment(info, onConfirm) {
@@ -901,7 +901,9 @@ const UI = (function () {
     const rows = Game.teacherLog(date);
     const total = Math.min(20000, rows.reduce(function(sum,r){return sum + (r.ledgerAmount == null ? r.amount + (r.expiredAmount || 0) : r.ledgerAmount);},0));
     const outstanding = function(r){return r.outstanding == null ? r.amount : r.outstanding;};
-    const pending = rows.filter(function(r){return outstanding(r)>0 && !r.claimedAt && !r.receivedAt && r.ledgerStatus!=='requested';});
+    const pending = rows.filter(function(r){return outstanding(r)>0 && !r.receivedAt;});
+    const unreported = pending.filter(function(r){return !r.claimedAt && r.ledgerStatus!=='requested';});
+    const submissionIds = unreported.map(function(r){return r.id;});
     const pendingTotal = pending.reduce(function(sum,r){return sum+outstanding(r);},0);
     const unpaidTotal = rows.reduce(function(sum,r){return sum+outstanding(r);},0);
     const already = rows.reduce(function(sum,r){return sum+(r.paidAmount || 0);},0);
@@ -922,7 +924,7 @@ const UI = (function () {
     }).join('') || '<li>이 날짜에 확정된 보상이 없습니다.</li>';
     const copyText = '📜 루멘티아 미소 수령 인증서 · 선생님 클래스톡 제출용\n\n※ 선생님 클래스톡으로 보내야 효력이 발생합니다. 복사·저장만으로는 제출되지 않습니다.\n\n파수꾼: ' + keeper + '\n보상 기준일: ' + date + ' (한국 시간)\n이번 제출 미소: ' + fmt(pendingTotal) +
       '\n학생 번호: ' + (identity ? identity.id.slice(0,8) : '미연결') + '\n해당 날짜 누적 보상: ' + fmt(total) + ' / 20,000미소\n지급 완료 미소: ' + fmt(already) +
-      '\n정산 번호: ' + ids.join(', ') + '\n※ 선생님은 클래스톡 수신 내역과 정산 번호를 확인해 주세요. 같은 번호는 중복 지급하지 마세요.\nhttps://lumentia.vercel.app';
+      '\n발급 일시: ' + formatKST(Date.now()) + ' (한국 시간)\n제출 기한: ' + (deadline ? formatKST(deadline) : '선생님 수신 확인 완료') + '\n정산 번호: ' + ids.join(', ') + '\n※ 재발급해도 같은 정산 번호는 한 번만 지급합니다. 선생님은 클래스톡 수신 내역과 정산 번호를 확인해 주세요.\nhttps://lumentia.vercel.app';
     const m = modal('<div class="cert-modal"><div class="cert-card">' +
       '<div class="cert-header"><p class="cert-subtitle">선생님 클래스톡 제출용</p><h2 class="cert-title">미소 수령 인증서</h2></div>' +
       '<div class="classtalk-required" role="note"><b>선생님 클래스톡으로 보내야 효력이 발생합니다.</b><p>인증서를 복사하거나 캡처한 뒤, 선생님 클래스톡에 직접 보내주세요. 복사·저장만으로는 제출되지 않습니다.</p></div>' +
@@ -931,11 +933,11 @@ const UI = (function () {
       '<div class="cert-stat-box"><span class="stat-label">남은 청구 보상</span><b class="stat-val" id="cert-pending-total">' + fmt(unpaidTotal) + ' 미소</b><small>미제출 + 수신 확인·지급 대기 금액</small></div>' +
       '<div class="cert-stat-box"><span class="stat-label">선생님 지급 완료</span><b class="stat-val" id="cert-paid-total">' + fmt(already) + ' 미소</b></div>' +
       '<div class="cert-stat-box"><span class="stat-label">미제출 보상 만료</span><b class="cert-deadline">' + (deadline ? formatKST(deadline) + '부터' : '미제출 보상 없음') + '</b><small>수령 확정 후 72시간</small></div></div>' +
-      '<p class="info-note">학생 번호: ' + (identity ? escapeHTML(identity.id.slice(0,8)) : '미연결') + '<br>이번 인증서에 담을 미제출 금액: ' + fmt(pendingTotal) + '미소<br><span class="ledger-connection">' + (connection.connected ? '서버 지급 기록 연결됨 · 선생님 지급 확인 시 잔액에 반영' : '서버 지급 기록을 확인하고 있습니다') + '</span></p>' +
+      '<p class="info-note">학생 번호: ' + (identity ? escapeHTML(identity.id.slice(0,8)) : '미연결') + '<br>이번 인증서에 담을 미지급 금액: ' + fmt(pendingTotal) + '미소<br>이미 제출했어도 필요하면 같은 인증서를 다시 복사할 수 있어요. 같은 정산 번호는 한 번만 지급돼요.<br><span class="ledger-connection">' + (connection.connected ? '서버 지급 기록 연결됨 · 선생님 지급 확인 시 잔액에 반영' : '서버 지급 기록을 확인하고 있습니다') + '</span></p>' +
       '<ul class="settlement-list">' + recordRows + '</ul>' +
       '<p class="info-note">① 인증서 복사 또는 화면 캡처 → ② 선생님 클래스톡으로 전송 → ③ 아래에 제출 기록<br>72시간 안에 클래스톡으로 보내지 않으면 보상이 만료됩니다.<br>제출 기록 버튼은 자동 전송이나 선생님의 수신 확인을 대신하지 않습니다. 선생님이 수신 확인한 보상은 지급 대기로 보관되고, 지급 완료 금액만큼 청구 잔액이 차감됩니다. 성장 미소와 영웅 기록은 유지됩니다.</p></div></div>' +
-      '<div class="cert-actions"><button class="btn-primary cert-copy-btn" id="btn-cert-copy" ' + (pendingTotal ? '' : 'disabled') + '>1. 클래스톡에 보낼 인증서 복사</button>' +
-      '<button class="btn-line" id="btn-record-classtalk" ' + (pendingTotal ? '' : 'disabled') + '>2. 클래스톡으로 보냈어요 · 제출 기록</button>' +
+      '<div class="cert-actions"><button class="btn-primary cert-copy-btn" id="btn-cert-copy" ' + (pendingTotal ? '' : 'disabled') + '>' + (unreported.length === pending.length ? '1. 클래스톡에 보낼 인증서 복사' : '클래스톡 인증서 다시 복사') + '</button>' +
+      '<button class="btn-line" id="btn-record-classtalk" ' + (submissionIds.length ? '' : 'disabled') + '>2. 클래스톡으로 보냈어요 · 제출 기록</button>' +
       '<div class="cert-sub-actions"><button class="btn-ghost" id="btn-refresh-ledger">지급 내역 새로고침</button><button class="btn-ghost" id="btn-open-log-from-cert">날짜별 보상 기록</button><button class="btn-ghost" data-close>닫기</button></div></div></div>');
     m.querySelector('.cert-modal').dataset.rewardDate = date;
     async function refreshLedger() {
@@ -953,12 +955,12 @@ const UI = (function () {
     function recordCopy() {
       const ok = Game.recordCertificateCopy(date, ids);
       openTeacherCertificate(date);
-      toast(ok ? '복사했습니다. 아직 제출 전입니다! 선생님 클래스톡으로 보내주세요.' : '보상 상태가 바뀌었습니다. 금액을 다시 확인하세요.');
+      toast(ok ? '인증서를 복사했어요. 선생님 클래스톡에 직접 보내주세요. 같은 정산 번호는 한 번만 지급돼요.' : '보상 상태가 바뀌었습니다. 금액을 다시 확인하세요.');
     }
     copy.addEventListener('click', async function () {
       copy.disabled = true;
       if (typeof Rewards !== 'undefined') { const sync = await Rewards.sync(); if (!sync.ok || (sync.rejected && ids.some(function(id){return sync.rejected.indexOf(id)>=0;}))) {copy.disabled=false;toast('지급 기록 연결과 정산 번호를 확인한 뒤 다시 복사해 주세요.');return;} }
-      const fresh = Game.teacherLog(date).filter(function(r){return ids.indexOf(r.id)>=0 && outstanding(r)>0 && !r.claimedAt && !r.receivedAt && r.ledgerStatus!=='requested';});
+      const fresh = Game.teacherLog(date).filter(function(r){return ids.indexOf(r.id)>=0 && outstanding(r)>0 && !r.receivedAt;});
       if (fresh.length !== pending.length || fresh.reduce(function(n,r){return n+outstanding(r);},0)!==pendingTotal) { openTeacherCertificate(date); toast('보상 상태가 바뀌었습니다. 최신 금액을 확인하세요.'); return; }
       try { await navigator.clipboard.writeText(copyText); recordCopy(); }
       catch (e) {
@@ -974,7 +976,7 @@ const UI = (function () {
         '<div class="btn-row"><button class="btn-primary" id="confirm-classtalk-submission">보냈어요 · 제출 기록하기</button><button class="btn-ghost" id="cancel-classtalk-submission">아직 보내지 않았어요</button></div>');
       confirmation.querySelector('#cancel-classtalk-submission').addEventListener('click', function () { openTeacherCertificate(date); });
       confirmation.querySelector('#confirm-classtalk-submission').addEventListener('click', function () {
-        const ok = Game.recordClassTalkSubmission(date, ids);
+        const ok = Game.recordClassTalkSubmission(date, submissionIds);
         openTeacherCertificate(date);
         toast(ok ? '제출했다고 기록했습니다. 선생님 클래스톡 수신 내역이 효력의 기준입니다.' : '만료되었거나 상태가 바뀌었습니다. 금액을 다시 확인하세요.');
       });
@@ -1052,7 +1054,6 @@ const UI = (function () {
           '<button class="btn-ghost" id="btn-logout" style="width:auto;height:34px;padding:0 10px;font-size:11px">학생 로그아웃</button>' +
         '</div>' +
       '</div>' +
-      '<div class="setting-row"><div><b>선생님 관리자 계정</b><p>학생 로그아웃 없이 관리자 화면에 접속할 수 있습니다.</p></div><a href="/teacher" class="teacher-entry">선생님 관리</a></div>' +
       '<div class="setting-row">' +
         '<div><b>선생님 미소 청구 인증서</b><p>선생님께 보상 미소를 달라고 청구하는 공식 인증서를 발급합니다.</p></div>' +
         '<div style="display:flex;gap:6px">' +
@@ -1072,7 +1073,8 @@ const UI = (function () {
       '<div class="setting-actions">' +
         '<button class="btn-danger" id="btn-reset">저장 초기화</button>' +
         '<button class="btn-ghost" data-close>닫기</button>' +
-      '</div>'
+      '</div>' +
+      '<div class="gate-teacher-footer"><a href="/teacher" class="teacher-quiet-link">선생님 관리</a></div>'
     );
 
     m.querySelector('#toggle-bgm').addEventListener('click', function () {
@@ -1129,8 +1131,8 @@ const UI = (function () {
   function openStudentLogout() {
     const m = modal('<div class="modal-head"><h2>학생 계정 로그아웃</h2></div>' +
       '<p class="info-note">현재 학생의 영웅과 성장 기록을 저장하고 로그아웃합니다. 다시 로그인하면 이어서 할 수 있습니다.</p>' +
-      '<a href="/teacher" class="teacher-entry">선생님 관리 화면으로 바로 이동</a>' +
-      '<div class="btn-row"><button class="btn-primary" id="confirm-student-logout">학생 로그아웃</button><button class="btn-ghost" data-close>취소</button></div>');
+      '<div class="btn-row"><button class="btn-primary" id="confirm-student-logout">학생 로그아웃</button><button class="btn-ghost" data-close>취소</button></div>' +
+      '<div class="gate-teacher-footer"><a href="/teacher" class="teacher-quiet-link">선생님 관리</a></div>');
     m.querySelector('#confirm-student-logout').addEventListener('click', function(){Game.logout();});
   }
 
@@ -1204,7 +1206,6 @@ const UI = (function () {
           '</div>' +
           '<h2>파수꾼 관문</h2>' +
           '<p class="gate-sub">이름과 비밀번호로 별빛 여정을 저장하고 언제든 이어서 플레이하세요.</p>' +
-          '<a href="/teacher" class="teacher-entry">선생님 관리자 로그인</a>' +
         '</div>' +
 
         '<div class="gate-tabs">' +
@@ -1250,6 +1251,7 @@ const UI = (function () {
             '<button type="submit" class="btn-primary" id="btn-gate-submit">별빛 등록하고 시작</button>' +
           '</div>' +
         '</form>' +
+        '<div class="gate-teacher-footer"><a href="/teacher" class="teacher-quiet-link" aria-label="선생님 관리자 로그인">선생님 관리</a></div>' +
       '</div>',
       { sticky: true }
     );
