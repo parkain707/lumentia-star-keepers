@@ -30,6 +30,7 @@ const UI = (function () {
   let currentTab = 'battle';
   let lastUlt = -1;
   let lastUltReady = null;
+  let modalOnClose = null;
   let reportTotal = 0;
   let reportCount = 0;
   let reportHideTimer = null;
@@ -45,6 +46,7 @@ const UI = (function () {
     power: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/></svg>'
   };
 
+  function escapeHTML(value) { return String(value).replace(/[&<>"']/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); }
   function el(id) { return document.getElementById(id); }
   function setText(node, value) {
     if (node && node.textContent !== value) node.textContent = value;
@@ -103,6 +105,15 @@ const UI = (function () {
     els.potDangerTag = el('pot-danger-tag');
     els.dailyBadge = el('daily-play-badge');
     els.btnCashout = el('btn-cashout');
+    els.startChallenge = el('btn-start-challenge');
+    els.dailyReward = el('daily-reward-total');
+    els.challengeStatus = el('challenge-status');
+    els.startChallenge.addEventListener('click', async function () {
+      els.startChallenge.disabled = true;
+      try { SFX.init(); await Game.startChallenge(); }
+      catch (e) { toast('도전을 시작하지 못했습니다. 새로고침 후 다시 시도하세요.', 'bad'); }
+      renderHUD();
+    });
 
     // Interactive Guide Navigator Elements
     els.guideBanner = el('guide-banner');
@@ -116,11 +127,13 @@ const UI = (function () {
         const step = Game.getGuideStep();
         if (!step) return;
         SFX.play('click');
-        if (step.target === 'ult') {
-          showTab('battle');
-          if (window.Battle) Battle.castUltimate();
-        } else if (step.tab) {
-          showTab(step.tab);
+        if (step.target === 'cert') { openTeacherCertificate(step.date); return; }
+        if (step.target === 'records') { openTeacherLog(); return; }
+        if (step.tab) showTab(step.tab);
+        if (step.target === 'ult') Battle.castUltimate();
+        else if (step.focus) {
+          const button = el(step.focus);
+          if (button && !button.disabled) button.click();
         }
       });
     }
@@ -167,13 +180,14 @@ const UI = (function () {
         SFX.play('click');
         if (typeof Game === 'undefined') return;
         const pot = Game.getChallengePot();
-        if (pot <= 0) {
-          toast('수령할 누적 미소가 없습니다. 별길을 밝혀 미소를 모으세요!');
-          return;
-        }
-        if (confirm('지금 도전을 멈추고 지금까지 모은 +' + fmt(pot) + ' 미소를 안전하게 수령하시겠습니까?\n\n수령 즉시 선생님께 제출할 [미소 청구 인증서]가 발급됩니다!')) {
-          Game.cashoutChallengePot();
-        }
+        if (!Game.save()) return;
+        Battle.pause();
+        const m = modal('<div class="modal-head"><h2>수령하고 도전을 마칠까요?</h2></div>' +
+          '<p class="info-note">금고 ' + fmt(pot) + '포인트를 보상 미소로 확정합니다.<br>성장 미소는 유지되며, 확정 보상은 72시간 안에 청구해야 합니다.</p>' +
+          '<div class="btn-row"><button class="btn-primary" id="confirm-cashout">수령하고 종료</button><button class="btn-ghost" data-close>계속 도전</button></div>', {
+            onClose: function () { if (Game.state.run && Game.state.run.status === 'active') Battle.start(); }
+          });
+        m.querySelector('#confirm-cashout').addEventListener('click', function () { Game.cashoutChallengePot(); });
       });
     }
 
@@ -272,19 +286,23 @@ const UI = (function () {
   }
 
   function renderChallengePot() {
-    if (!els.potAmount || typeof Game === 'undefined') return;
+    if (!els.potAmount || !Game.state) return;
+    const run = Game.state.run;
+    const active = !!run && run.status === 'active';
     const pot = Game.getChallengePot();
-    setText(els.potAmount, '+' + fmt(pot) + ' 미소');
-    if (els.btnCashout) {
-      els.btnCashout.disabled = pot <= 0;
-    }
-    if (els.potDangerTag) {
-      els.potDangerTag.hidden = pot < 2500;
-    }
-    if (els.potBar) {
-      els.potBar.classList.toggle('danger', pot >= 2500);
-      els.potBar.classList.toggle('has-pot', pot > 0);
-    }
+    const daily = Game.checkDailyPlays();
+    setText(els.potAmount, fmt(pot) + ' P');
+    setText(els.dailyReward, fmt(Game.getDailyRewardClaimed()));
+    els.btnCashout.disabled = !active;
+    els.potDangerTag.hidden = !active || !Game.getDifficultyMultiplier().isHard;
+    els.potBar.classList.toggle('danger', active && Game.getDifficultyMultiplier().isHard);
+    els.potBar.classList.toggle('has-pot', active);
+    els.startChallenge.hidden = active;
+    els.startChallenge.disabled = !daily.canPlay;
+    setText(els.startChallenge, daily.canPlay ? '도전 시작 · ' + daily.available + '회 남음' : '오늘의 도전 완료');
+    const runDateNote = active && run.date !== Game.today() ? ' · ' + run.date + ' 시작분' : '';
+    setText(els.challengeStatus, active ? '도전 중 · 금고는 수령해야 확정됩니다' + runDateNote : '하루 2회 · 수령 또는 패배 시 종료 · 미청구 보상은 72시간 후 만료');
+    if (els.ultBtn) els.ultBtn.disabled = !active;
     updateDailyBadge();
   }
 
@@ -296,27 +314,10 @@ const UI = (function () {
   }
 
   function openDailyLimitModal() {
-    modal(
-      '<div class="modal-head"><div><p class="eyebrow">DAILY LIMIT</p><h2>오늘의 도전 완료</h2></div>' +
-        '<button class="modal-x" data-close aria-label="닫기">×</button></div>' +
-      '<div class="info-note" style="background:rgba(255,212,121,.08);border-color:rgba(255,212,121,.3);color:#fff;font-size:13px;line-height:1.7;">' +
-        '✨ <b>오늘의 별빛 도전 기회(하루 2회)를 모두 마쳤습니다!</b><br>' +
-        '선생님과의 약속대로 내일 새로운 별빛이 뜰 때 다시 도전해 주세요.<br><br>' +
-        '지금까지 획득한 미소는 <b>[선생님 미소 청구 인증서]</b>로 발급받아 선생님께 제출할 수 있습니다.' +
-      '</div>' +
-      '<div class="btn-row" style="margin-top:14px;">' +
-        '<button type="button" class="btn-primary" id="btn-daily-open-cert">📜 선생님께 미소 청구 인증서 발급</button>' +
-        '<button type="button" class="btn-ghost" data-close>확인</button>' +
-      '</div>'
-    );
-    const certBtn = document.querySelector('#btn-daily-open-cert');
-    if (certBtn) {
-      certBtn.addEventListener('click', function () {
-        SFX.play('click');
-        closeModal();
-        openTeacherCertificate();
-      });
-    }
+    modal('<div class="modal-head"><h2>오늘의 도전 완료</h2><button data-close class="modal-x" aria-label="닫기">×</button></div>' +
+      '<p class="info-note">하루 2회 도전을 모두 사용했습니다. 한국 시간 자정에 새 도전 기회가 생깁니다.<br>오늘 누적 보상: ' + fmt(Game.getDailyRewardClaimed()) + ' / 20,000미소</p>' +
+      '<button class="btn-primary" id="btn-daily-open-cert">보상 기록과 청구서</button>');
+    el('btn-daily-open-cert').addEventListener('click', function () { openTeacherCertificate(); });
   }
 
   function updateGuideBanner() {
@@ -326,6 +327,9 @@ const UI = (function () {
 
     if (els.guideTitle) setText(els.guideTitle, step.title);
     if (els.guideDesc) setText(els.guideDesc, step.desc);
+    if (els.guideActionBtn) setText(els.guideActionBtn, step.action || '확인');
+    document.querySelectorAll('.tutorial-focus').forEach(function (node) { node.classList.remove('tutorial-focus'); });
+    if (step.focus && el(step.focus)) el(step.focus).classList.add('tutorial-focus');
 
     // Pulse highlight management
     document.querySelectorAll('.nav-btn').forEach(function (b) {
@@ -818,6 +822,7 @@ const UI = (function () {
   function modal(html, opts) {
     opts = opts || {};
     closeModal();
+    modalOnClose = opts.onClose || null;
     const back = document.createElement('div');
     back.className = 'modal-backdrop';
     back.innerHTML = '<div class="modal">' + html + '</div>';
@@ -837,242 +842,111 @@ const UI = (function () {
 
   function closeModal() {
     els.modalRoot.innerHTML = '';
+    const callback = modalOnClose;
+    modalOnClose = null;
+    if (callback) callback();
   }
 
   /* ---------------- teacher report ---------------- */
 
-  function showTeacherReport(amount, label) {
-    if (!els.teacherReport) return;
-    reportTotal += amount;
-    reportCount += 1;
-    setText(
-      els.teacherText,
-      '미소 +' + fmt(reportTotal) + (reportCount > 1 ? ' · ' + reportCount + '건' : ' · ' + label)
-    );
-    els.teacherReport.hidden = false;
-    els.teacherReport.classList.remove('pop');
-    void els.teacherReport.offsetWidth;
-    els.teacherReport.classList.add('pop');
-    clearTimeout(reportHideTimer);
-    reportHideTimer = setTimeout(function () {
-      els.teacherReport.classList.remove('pop');
-      els.teacherReport.hidden = true;
-    }, 2800);
-    clearTimeout(reportResetTimer);
-    reportResetTimer = setTimeout(function () {
-      reportTotal = 0;
-      reportCount = 0;
-    }, 3200);
+  function showTeacherReport(amount) {
+    toast('청구 보상 +' + fmt(amount) + '미소 확정 · 72시간 안에 청구하세요', 'gold');
   }
-
-  function openTeacherCertificate(targetAmount) {
-    const keeper = (typeof Game !== 'undefined') ? Game.getKeeperName() : '별의 파수꾼';
-    const state = (typeof Game !== 'undefined') ? Game.state : null;
-    const currentGold = state ? state.gold : 0;
-    const highestStage = (state && typeof state.highest === 'number') ? (state.highest + 1) : 1;
-    const log = (typeof Game !== 'undefined') ? Game.teacherLog().slice().reverse() : [];
-    const recentSum = log.reduce(function (s, r) { return s + (r.amount || 0); }, 0);
-    
-    // 🔥 하루(1일) 학생 1명당 최대 20,000 미소 절대 상한 강제 적용!
-    const dailyClaimed = (typeof Game !== 'undefined' && Game.getDailyRewardClaimed) ? Game.getDailyRewardClaimed() : 0;
-    const rawClaim = targetAmount || (dailyClaimed > 0 ? dailyClaimed : (recentSum > 0 ? recentSum : currentGold));
-    const claimAmount = Math.max(0, Math.min(20000, Math.floor(Number(rawClaim) || 0)));
-
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    const hh = String(now.getHours()).padStart(2, '0');
-    const min = String(now.getMinutes()).padStart(2, '0');
-    const dateStr = yyyy + '. ' + mm + '. ' + dd + ' ' + hh + ':' + min;
-    const dateYMD = yyyy + mm + dd;
-
-    // 🔥 학생들의 텍스트/화면 위조를 원천 차단하는 교사용 암호화 체크섬 (이름+날짜+금액 연동)
-    function computeChecksum(name, date, amt) {
-      const str = 'LMN2026_SHIELD_' + name + '_' + date + '_' + amt;
-      let h = 0x811c9dc5;
-      for (let i = 0; i < str.length; i++) {
-        h ^= str.charCodeAt(i);
-        h = Math.imul(h, 0x01000193);
-      }
-      return ('000000' + (h >>> 0).toString(16).toUpperCase()).slice(-6);
-    }
-    const signHex = computeChecksum(keeper, dateYMD, claimAmount);
-    const verifyCode = 'LMN-' + dateYMD + '-' + signHex;
-
-    const copyText = 
-      '📜 [루멘티아: 별의 파수꾼] 미소 보상 지급 청구서\n\n' +
-      '선생님, 안녕하세요! ✨\n' +
-      '별의 파수꾼 [' + keeper + '] 학생이 루멘티아 별길을 성실하게 탐험하여 오늘 미소를 모았습니다.\n\n' +
-      '⭐ 파수꾼 성명: ' + keeper + '\n' +
-      '⭐ 오늘(1일) 총 청구 미소: +' + fmt(claimAmount) + ' 미소\n' +
-      '⭐ 1일 총 지급 한도: 최대 20,000 미소 (엄격 준수)\n' +
-      '⭐ 최고 도달: 제 ' + highestStage + ' 성좌\n' +
-      '⭐ 발급 일시: ' + dateStr + '\n' +
-      '⭐ 공식 인증번호: ' + verifyCode + '\n\n' +
-      '※ [선생님 확인 안내]\n' +
-      '· 학생 1명당 하루(1일) 지급 가능한 총 미소는 최대 20,000 미소입니다.\n' +
-      '· 오늘 2회 플레이를 모두 합쳐도 총 20,000 미소를 초과하여 수령할 수 없습니다.\n' +
-      '👉 루멘티아 바로가기: https://lumentia.vercel.app';
-
-    const m = modal(
-      '<div class="cert-modal">' +
-        '<div class="cert-card">' +
-          '<div class="cert-ornament top-left"></div>' +
-          '<div class="cert-ornament top-right"></div>' +
-          '<div class="cert-ornament btm-left"></div>' +
-          '<div class="cert-ornament btm-right"></div>' +
-
-          '<div class="cert-header">' +
-            '<div class="cert-seal">' +
-              '<svg viewBox="0 0 32 32" width="34" height="34" aria-hidden="true">' +
-                '<defs><linearGradient id="cgrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe7a8"/><stop offset="1" stop-color="#8fdcff"/></linearGradient></defs>' +
-                '<path d="M16 2l3.4 9.4L29 16l-9.6 4.6L16 30l-3.4-9.4L3 16l9.6-4.6z" fill="url(#cgrad)"/>' +
-                '<circle cx="16" cy="16" r="2.2" fill="#0c1328"/>' +
-              '</svg>' +
-            '</div>' +
-            '<p class="cert-subtitle">LUMENTIA REWARD VOUCHER</p>' +
-            '<h2 class="cert-title">별빛 미소 지급 청구 인증서</h2>' +
-          '</div>' +
-
-          '<div class="cert-body">' +
-            '<div class="cert-to"><span>수신:</span> <b>존경하는 선생님 귀하</b></div>' +
-            '<p class="cert-desc">' +
-              '위 파수꾼은 루멘티아의 별길을 성실하게 탐험하여 안개를 걷어내고 정직하게 미소를 획득하였음을 공식 증명합니다.<br>' +
-              '선생님, 파수꾼이 약속을 지키며 모은 미소 보상을 기쁜 마음으로 지급해 주실 것을 정중히 청구합니다!' +
-            '</p>' +
-
-            '<div class="cert-grid">' +
-              '<div class="cert-stat-box highlight">' +
-                '<span class="stat-label">오늘(1일) 총 청구 미소</span>' +
-                '<b class="stat-val gold">+' + fmt(claimAmount) + ' <i class="unit">미소</i></b>' +
-              '</div>' +
-              '<div class="cert-stat-box">' +
-                '<span class="stat-label">파수꾼(학생)</span>' +
-                '<b class="stat-val keeper-name">' + keeper + '</b>' +
-              '</div>' +
-              '<div class="cert-stat-box">' +
-                '<span class="stat-label">도달 성좌</span>' +
-                '<b class="stat-val">제 ' + highestStage + ' 성좌</b>' +
-              '</div>' +
-              '<div class="cert-stat-box">' +
-                '<span class="stat-label">현재 누적</span>' +
-                '<b class="stat-val">' + fmt(currentGold) + ' 미소</b>' +
-              '</div>' +
-            '</div>' +
-
-            '<div class="cert-footer-meta">' +
-              '<div class="cert-meta-col">' +
-                '<span>발급 일시: ' + dateStr + '</span>' +
-                '<span>인증 코드: <b class="code">' + verifyCode + '</b></span>' +
-              '</div>' +
-              '<div class="cert-stamp-wrap">' +
-                '<div class="cert-stamp">' +
-                  '<span>공식인증</span>' +
-                  '<b>루멘티아</b>' +
-                  '<span>별빛수호</span>' +
-                '</div>' +
-              '</div>' +
-            '</div>' +
-          '</div>' +
-        '</div>' +
-
-        '<div class="cert-actions">' +
-          '<button type="button" class="btn-primary cert-copy-btn" id="btn-cert-copy">' +
-            '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-              '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>' +
-              '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>' +
-            '</svg>' +
-            '📋 카톡 · 문자용 인증서 복사하기' +
-          '</button>' +
-          '<div class="cert-sub-actions">' +
-            '<button type="button" class="btn-ghost" id="btn-open-log-from-cert">상세 획득 기록</button>' +
-            '<button type="button" class="btn-ghost" data-close>닫기</button>' +
-          '</div>' +
-        '</div>' +
-      '</div>'
-    );
-
-    const copyBtn = m.querySelector('#btn-cert-copy');
-    if (copyBtn) copyBtn.dataset.copyText = copyText;
-
-    copyBtn.addEventListener('click', function () {
-      SFX.play('claim');
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(copyText).then(function () {
-          toast('선생님께 드릴 미소 인증서가 복사되었습니다! 카톡이나 문자로 보내세요.');
-        }).catch(function () {
-          prompt('아래 인증서 전문을 복사하세요:', copyText);
+  function formatKST(timestamp) {
+    return new Intl.DateTimeFormat('ko-KR', {timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false}).format(new Date(timestamp));
+  }
+  function openChallengeResult(run) {
+    const success = run.status === 'cashed_out';
+    const total = Game.getDailyRewardClaimed(run.date);
+    const m = modal('<div class="modal-head"><div><p class="eyebrow">CHALLENGE RESULT</p><h2>도전 종료 · ' + (success ? '안전 수령' : '도전 실패') + '</h2></div></div>' +
+      '<div class="result-grid">' +
+      '<div><span>이번 도전 성장 미소</span><b>+' + fmt(run.growth) + '</b><small>영웅 육성 지갑에 보관</small></div>' +
+      '<div><span>' + (success ? '확정 보상 미소' : '잃은 금고 포인트') + '</span><b>' + fmt(success ? run.amount : run.lost) + (success ? ' 미소' : ' P') + '</b><small>' + (success ? (run.amount > 0 ? '미청구 시 ' + formatKST(run.endedAt + Challenge.CLAIM_TTL) + ' 만료' : '이번 도전의 청구 보상은 없습니다') : '성장 미소와 영웅은 유지됩니다') + '</small></div></div>' +
+      '<p class="info-note">보상 기준일: ' + run.date + ' · 누적 ' + fmt(total) + ' / 20,000미소<br>완료한 스테이지: ' + run.cleared + ' · 오늘 남은 도전: ' + Game.checkDailyPlays().available + '/2</p>' +
+      '<div class="btn-row"><button class="btn-primary" id="result-certificate">청구 보상 확인</button><button class="btn-ghost" data-close>닫기</button></div>');
+    m.querySelector('#result-certificate').addEventListener('click', function () { openTeacherCertificate(run.date); });
+  }
+  function openSyncNotice() {
+    const m = modal('<div class="modal-head"><h2>다른 탭에서 여정을 이어가고 있어요</h2></div>' +
+      '<p class="info-note">기록이 겹치지 않도록 이 탭을 멈췄습니다. 다른 게임 탭을 닫은 뒤 여기서 이어서 진행하세요.</p>' +
+      '<button class="btn-primary" id="resume-this-tab">이 탭에서 이어서 진행</button>', {sticky: true});
+    m.querySelector('#resume-this-tab').addEventListener('click', function () { closeModal(); Game.reloadFromAuth(); });
+  }
+  function openTeacherCertificate(date) {
+    date = /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? date : Game.today();
+    const keeper = Game.getKeeperName();
+    const rows = Game.teacherLog(date);
+    const total = Game.getDailyRewardClaimed(date);
+    const pending = rows.filter(function (r) { return r.amount > 0 && !r.claimedAt; });
+    const pendingTotal = pending.reduce(function (sum, r) { return sum + r.amount; }, 0);
+    const already = rows.filter(function (r) { return r.claimedAt; }).reduce(function (sum, r) { return sum + r.amount; }, 0);
+    const ids = pending.map(function (r) { return r.id; });
+    const deadline = pending.length ? Math.min.apply(null, pending.map(function (r) { return r.t + Challenge.CLAIM_TTL; })) : null;
+    const recordRows = rows.map(function (r) {
+      const status = r.expiredAmount ? '미청구 만료 · 0미소' : (r.outcome === 'failed' ? '도전 실패 · 0미소' : (r.claimedAt ? '청구 완료' : (r.amount > 0 ? '미청구 · ' + formatKST(r.t + Challenge.CLAIM_TTL) + ' 만료' : '획득 보상 없음 · 0미소')));
+      return '<li><span>' + escapeHTML(r.id) + '</span><b>' + fmt(r.amount) + '미소</b><small>' + status + '</small></li>';
+    }).join('') || '<li>이 날짜에 확정된 보상이 없습니다.</li>';
+    const copyText = '📜 루멘티아 미소 보상 청구서\n파수꾼: ' + keeper + '\n보상 기준일: ' + date + ' (한국 시간)\n이번 청구 미소: ' + fmt(pendingTotal) +
+      '\n해당 날짜 누적 보상: ' + fmt(total) + ' / 20,000미소\n이미 청구한 미소: ' + fmt(already) +
+      '\n정산 번호: ' + ids.join(', ') + '\n※ 같은 정산 번호는 중복 지급하지 마세요. 누적액을 다시 지급하는 청구서가 아닙니다.\nhttps://lumentia.vercel.app';
+    const m = modal('<div class="cert-modal"><div class="cert-card">' +
+      '<div class="cert-header"><p class="cert-subtitle">LUMENTIA REWARD VOUCHER</p><h2 class="cert-title">미소 보상 청구서</h2></div>' +
+      '<div class="cert-body"><div class="cert-to">수신: <b>선생님 귀하</b></div><p class="cert-desc">' + escapeHTML(keeper) + ' · 보상 기준일 ' + date + ' (한국 시간)<br>수령이 끝난 도전의 확정 보상만 표시합니다.</p>' +
+      '<div class="cert-grid"><div class="cert-stat-box highlight"><span class="stat-label">해당 날짜 누적 보상 미소</span><b class="stat-val gold" id="cert-daily-total">' + fmt(total) + ' 미소</b><small>하루 합계 최대 20,000미소</small></div>' +
+      '<div class="cert-stat-box"><span class="stat-label">이번에 청구할 미소</span><b class="stat-val" id="cert-pending-total">' + fmt(pendingTotal) + ' 미소</b><small>아래 미청구 정산 건의 합계</small></div>' +
+      '<div class="cert-stat-box"><span class="stat-label">이미 청구한 미소</span><b class="stat-val">' + fmt(already) + ' 미소</b></div>' +
+      '<div class="cert-stat-box"><span class="stat-label">미청구 보상 만료</span><b class="cert-deadline">' + (deadline ? formatKST(deadline) + '부터' : '미청구 보상 없음') + '</b><small>수령 확정 후 72시간</small></div></div>' +
+      '<ul class="settlement-list">' + recordRows + '</ul>' +
+      '<p class="info-note">성장 미소는 영웅 육성용 지갑에 따로 보관됩니다.<br>청구서 복사 시 청구 완료로 기록합니다. 복사한 청구서를 선생님께 제출하세요.<br>같은 정산 번호는 한 번만 지급하며, 미청구 보상은 72시간 뒤 0미소가 됩니다.</p></div></div>' +
+      '<div class="cert-actions"><button class="btn-primary cert-copy-btn" id="btn-cert-copy" ' + (pendingTotal ? '' : 'disabled') + '>청구서 복사 · 청구 완료로 기록</button>' +
+      '<div class="cert-sub-actions"><button class="btn-ghost" id="btn-open-log-from-cert">날짜별 보상 기록</button><button class="btn-ghost" data-close>닫기</button></div></div></div>');
+    const copy = m.querySelector('#btn-cert-copy');
+    copy.dataset.copyText = copyText;
+    copy.addEventListener('click', async function () {
+      copy.disabled = true;
+      const fresh = Game.teacherLog(date).filter(function (r) { return ids.indexOf(r.id) >= 0 && r.amount > 0 && !r.claimedAt; });
+      if (fresh.length !== pending.length) { openTeacherCertificate(date); toast('보상 상태가 바뀌었습니다. 최신 금액을 확인하세요.'); return; }
+      let copied = false;
+      try { await navigator.clipboard.writeText(copyText); copied = true; }
+      catch (e) {
+        const fallback = modal('<div class="modal-head"><h2>청구서를 직접 복사해 주세요</h2></div>' +
+          '<p class="info-note">아래 내용을 길게 눌러 복사한 뒤 완료 버튼을 눌러주세요.</p><textarea class="claim-copy-text" readonly>' + escapeHTML(copyText) + '</textarea>' +
+          '<div class="btn-row"><button class="btn-primary" id="manual-claim-complete">복사 완료 · 청구 기록</button><button class="btn-ghost" data-close>취소</button></div>');
+        fallback.querySelector('#manual-claim-complete').addEventListener('click', function () {
+          const ok = Game.claimTeacherReward(date, ids);
+          openTeacherCertificate(date);
+          toast(ok ? '청구 완료로 기록했습니다. 선생님께 제출하세요.' : '보상 상태가 바뀌었습니다. 금액을 다시 확인하세요.');
         });
-      } else {
-        prompt('아래 인증서 전문을 복사하세요:', copyText);
+        return;
       }
+      if (copied && Game.claimTeacherReward(date, ids)) { openTeacherCertificate(date); toast('청구 완료로 기록했습니다. 복사한 청구서를 선생님께 제출하세요.', 'gold'); }
+      else { copy.disabled = false; toast('청구 완료로 기록하지 못했습니다. 다시 시도하세요.', 'bad'); }
     });
-
-    m.querySelector('#btn-open-log-from-cert').addEventListener('click', function () {
-      SFX.play('click');
-      closeModal();
-      openTeacherLog();
-    });
+    m.querySelector('#btn-open-log-from-cert').addEventListener('click', openTeacherLog);
   }
-
   function openTeacherLog() {
-    const log = Game.teacherLog().slice().reverse();
-    const total = log.reduce(function (s, r) { return s + r.amount; }, 0);
-    const rows = log.length
-      ? log.map(function (r) {
-          const d = new Date(r.t);
-          const hh = String(d.getHours()).padStart(2, '0');
-          const mm = String(d.getMinutes()).padStart(2, '0');
-          const ss = String(d.getSeconds()).padStart(2, '0');
-          return '<div class="report-row">' +
-            '<span class="report-time">' + hh + ':' + mm + ':' + ss + '</span>' +
-            '<span class="report-label">' + r.label + '</span>' +
-            '<b>+' + fmt(r.amount) + '미소</b>' +
-          '</div>';
-        }).join('')
-      : '<div class="report-empty">아직 받은 미소가 없습니다.</div>';
-    const m = modal(
-      '<div class="modal-head"><div><p class="eyebrow">SMILE RECORD</p><h2>받은 미소 기록</h2>' +
-        '<p>선생님께 드릴 미소 내역을 확인합니다.</p></div>' +
-        '<button class="modal-x" data-close aria-label="닫기">×</button></div>' +
-      '<button type="button" class="btn-line" id="btn-open-cert-from-log" style="width:100%;margin-bottom:12px;height:40px;font-size:12.5px;">📜 선생님께 제출할 인증서 발급하기 →</button>' +
-      '<div class="report-sum"><span>최근 받은 미소</span><b>' + fmt(total) + '<i>미소</i></b></div>' +
-      '<div class="report-list">' + rows + '</div>' +
-      '<div class="info-note">미소를 받으면 <b>‘획득한 미소를 선생님에게 알려주세요’</b> 안내가 화면에 표시됩니다.<br>1회 보상은 최대 20,000미소를 넘지 않습니다.</div>' +
-      '<button class="btn-primary" data-close style="margin-top:14px">확인</button>'
-    );
-
-    m.querySelector('#btn-open-cert-from-log').addEventListener('click', function () {
-      SFX.play('click');
-      closeModal();
-      openTeacherCertificate();
-    });
+    const dates = Object.keys(Game.state.rewardDays).sort().reverse();
+    const rows = dates.map(function (date) {
+      const list = Game.teacherLog(date);
+      const pending = list.filter(function (r) { return r.amount > 0 && !r.claimedAt; }).reduce(function (sum, r) { return sum + r.amount; }, 0);
+      return '<button class="reward-day btn-line" data-reward-day="' + date + '"><span>' + date + '</span><b>누적 ' + fmt(Game.getDailyRewardClaimed(date)) + ' / 20,000</b><small>미청구 ' + fmt(pending) + '미소</small></button>';
+    }).join('');
+    const m = modal('<div class="modal-head"><h2>날짜별 청구 보상</h2><button data-close class="modal-x" aria-label="닫기">×</button></div>' +
+      '<p class="info-note">각 날짜의 도전 2회를 합산합니다. 미청구 보상은 확정 후 72시간이 지나면 0미소가 됩니다.</p>' + rows + '<button class="btn-primary" data-close>닫기</button>');
+    m.querySelectorAll('[data-reward-day]').forEach(function (button) { button.addEventListener('click', function () { openTeacherCertificate(button.dataset.rewardDay); }); });
   }
 
   function openGuide() {
-    modal(
-      '<div class="modal-head"><div><p class="eyebrow">HOW TO PLAY</p><h2>게임 방법 & 별길 가이드</h2></div>' +
-        '<button class="modal-x" data-close aria-label="닫기">×</button></div>' +
-      '<div class="guide-list">' +
-        '<div class="guide-item" style="border: 1px solid rgba(255, 212, 121, .35); background: rgba(255, 212, 121, .06);">' +
-          '<span class="guide-num" style="color:var(--gold);">★</span>' +
-          '<div><b style="color:var(--gold); font-size:12px;">핵심 플레이 3단계 법칙</b>' +
-          '<p style="color:#fff; line-height:1.6;">① <b>전투 & 미소 수집:</b> 동행들이 자동으로 적을 물리치며 미소와 별빛을 획득합니다.<br>' +
-          '② <b>동행 성장 & 소환:</b> 미소로 [영웅] 레벨을 올리고, [소환]에서 첫 10회 무료 소환으로 새 동행을 맞이하세요.<br>' +
-          '③ <b>궁극기 폭발:</b> 게이지가 차면 오른쪽 아래 [별자리 합주]를 눌러 보스를 시원하게 돌파하세요!</p></div>' +
-        '</div>' +
-        '<div class="guide-item"><span class="guide-num">1</span><div><b>실시간 여정 안내 배너</b>' +
-          '<p>화면 상단에 항상 표시되는 <b>[여정 안내 배너]</b>와 골드빛으로 깜빡이는 탭 버튼이 지금 당장 해야 할 최고의 행동을 친절하게 이끌어줍니다.</p></div></div>' +
-        '<div class="guide-item"><span class="guide-num">2</span><div><b>자동 산책 & 전투</b><p>동행들은 스스로 별빛을 보태 안개를 걷어냅니다. 길을 밝히면 다음 별길로 이어집니다.</p></div></div>' +
-        '<div class="guide-item"><span class="guide-num">3</span><div><b>동행 성장 & 각성</b><p>미소로 동행의 레벨을 키우고, 같은 동행의 조각으로 각성하세요. 각성 시 스탯과 레벨 상한이 폭증합니다.</p></div></div>' +
-        '<div class="guide-item"><span class="guide-num">4</span><div><b>별의 소환 & 3인 편성</b><p>별빛으로 새로운 동행을 소환하세요. 획득한 동행은 [영웅] 탭 상단 슬롯에서 3인 파티로 편성할 수 있습니다.</p></div></div>' +
-        '<div class="guide-item"><span class="guide-num">5</span><div><b>오프라인 방치 수급</b><p>게임을 종료해도 최고 스테이지 기준으로 미소가 자동 누적됩니다. (최대 8시간)</p></div></div>' +
-        '<div class="guide-item"><span class="guide-num">6</span><div><b>보상 규정 & 난도</b><p>미소를 받으면 ‘획득한 미소를 선생님에게 알려주세요’ 안내가 표시됩니다. 1회 보상은 최대 20,000미소 상한이며, 스테이지 13부터 안개가 짙어집니다.</p></div></div>' +
-      '</div>' +
-      '<div class="info-note">세계관 · 캐릭터 · 일러스트 · 음향은 모두 이 게임을 위해 새로 만든 오리지널 요소입니다.</div>' +
-      '<button class="btn-primary" data-close style="margin-top:14px">모험 시작하기</button>'
-    );
+    modal('<div class="modal-head"><h2>별빛 도전 안내</h2><button class="modal-x" data-close aria-label="닫기">×</button></div>' +
+      '<div class="guide-list"><p class="info-note">① 하루 2회, 시작할 때 1회 사용합니다. 매 도전은 스테이지 1부터 시작합니다.<br>' +
+      '② 성장 미소는 영웅 육성용입니다. 처치·임무·방치 보상은 청구 보상에 포함되지 않습니다.<br>' +
+      '③ 스테이지를 밝히면 금고 포인트가 쌓입니다. 멈추고 수령하면 보상 미소로 확정되고 도전이 끝납니다.<br>' +
+      '④ 패배·75초 시간 초과 시 금고를 잃고 종료합니다. 성장 미소와 영웅 기록은 유지됩니다.<br>' +
+      '⑤ 하루 청구 보상은 두 도전 합산 최대 20,000미소입니다. 남은 한도에 도달하면 자동 수령합니다.<br>' +
+      '⑥ 오늘 보상 합계 5,000미소를 초과하는 구간은 매우 어렵습니다. 위험할 때 금고를 수령하세요.<br>' +
+      '⑦ 확정 보상은 72시간 안에 인증서를 복사해 청구하세요. 미청구 보상은 0미소로 만료됩니다.<br>' +
+      '⑧ 날짜는 한국 시간 기준입니다. 자정을 넘긴 도전은 시작 날짜의 보상으로 정산됩니다.</p></div>' +
+      '<button class="btn-primary" data-close>확인</button>');
   }
 
   function openRates() {
@@ -1129,7 +1003,7 @@ const UI = (function () {
         '<button class="btn-ghost" id="open-guide" style="width:auto;height:32px;padding:0 12px;font-size:10.5px">열기</button>' +
       '</div>' +
       '<div class="info-note">루멘티아 : 별의 파수꾼<br>' +
-        '미소를 받으면 ‘획득한 미소를 선생님에게 알려주세요’ 안내가 표시됩니다. 1회 보상은 최대 20,000미소입니다.<br>' +
+        '성장 미소는 육성 전용입니다. 청구 보상은 하루 2회 합산 최대 20,000미소이며, 미청구 시 72시간 후 만료됩니다.<br>' +
         '이 게임의 세계관, 캐릭터, 이름, 일러스트, 음향은 모두 창작된 오리지널 요소이며, 특정 작품의 코드 · 이미지 · 캐릭터를 사용하지 않았습니다.<br><br>' +
         '진행도는 이 브라우저에 자동 저장됩니다.</div>' +
       '<div class="setting-actions">' +
@@ -1215,9 +1089,9 @@ const UI = (function () {
         '</svg>' +
       '</div>' +
       '<h2 style="text-align:center;font-size:20px;font-weight:800">수호단의 기록</h2>' +
-      '<p class="offline-time">' + fmtDuration(info.seconds) + ' 동안 미소가 쌓였습니다</p>' +
-      '<div class="offline-reward"><span>획득 미소</span><b><i class="ico ico-gold"></i>' + fmt(info.gold) + '</b></div>' +
-      '<p class="offline-cap">1회 최대 20,000미소 · 받은 미소를 선생님께 알려주세요</p>' +
+      '<p class="offline-time">' + fmtDuration(info.seconds) + ' 동안 성장 미소가 쌓였습니다</p>' +
+      '<div class="offline-reward"><span>획득 성장 미소</span><b><i class="ico ico-gold"></i>' + fmt(info.gold) + '</b></div>' +
+      '<p class="offline-cap">영웅 육성 전용 · 청구 보상에는 포함되지 않습니다</p>' +
       '<button class="btn-primary" id="claim-offline">보상 받기</button>',
       { sticky: true }
     );
@@ -1290,7 +1164,7 @@ const UI = (function () {
               '<span>이 기기에 저장된 파수꾼: </span>' +
               '<div class="user-chip-list">' +
                 userNames.map(function (u) {
-                  return '<button type="button" class="user-chip" data-name="' + u + '">' + u + '</button>';
+                  return '<button type="button" class="user-chip" data-name="' + escapeHTML(u) + '">' + escapeHTML(u) + '</button>';
                 }).join('') +
               '</div>' +
             '</div>'
@@ -1419,45 +1293,13 @@ const UI = (function () {
   }
 
   function openWelcome() {
-    const m = modal(
-      '<div class="welcome">' +
-        '<div class="welcome-body">' +
-          '<svg class="welcome-mark" viewBox="0 0 64 64" aria-hidden="true">' +
-            '<defs><linearGradient id="wg" x1="0" y1="0" x2="1" y2="1">' +
-              '<stop offset="0" stop-color="#ffe7a8"/><stop offset="1" stop-color="#8fdcff"/>' +
-            '</linearGradient></defs>' +
-            '<circle cx="32" cy="32" r="27" fill="none" stroke="rgba(255,212,121,.22)"/>' +
-            '<circle cx="32" cy="32" r="21" fill="none" stroke="rgba(143,220,255,.18)" stroke-dasharray="3 7"/>' +
-            '<path d="M32 7l6.2 18.8L57 32l-18.8 6.2L32 57l-6.2-18.8L7 32l18.8-6.2z" fill="url(#wg)"/>' +
-            '<circle cx="32" cy="32" r="3.4" fill="#060a16"/>' +
-          '</svg>' +
-          '<p class="eyebrow">A NEW CONSTELLATION</p>' +
-          '<h2>루멘티아</h2>' +
-          '<p class="welcome-tagline">별의 파수꾼</p>' +
-          '<p class="welcome-sub">안개가 별빛을 하나씩 가리는 세계.<br>이름을 이어받은 파수꾼들과 다시 별길을 밝힙니다.</p>' +
-          '<div class="welcome-howto">' +
-            '<div class="howto-head"><b>이렇게 즐겨요</b><span>HOW TO PLAY</span></div>' +
-            '<ol class="howto-list">' +
-              '<li class="howto-item"><span class="howto-no">01</span><div><b>자동 산책</b><p>동행들이 스스로 안개를 걷어내며 다음 별길을 엽니다.</p></div></li>' +
-              '<li class="howto-item"><span class="howto-no">02</span><div><b>함께 성장</b><p>미소로 레벨을 올리고, 같은 동행의 조각으로 각성합니다.</p></div></li>' +
-              '<li class="howto-item"><span class="howto-no">03</span><div><b>별의 인연</b><p>별빛으로 새 동행을 만납니다. 첫 10회 소환은 무료입니다.</p></div></li>' +
-              '<li class="howto-item"><span class="howto-no">04</span><div><b>별자리 합주</b><p>게이지가 차면 오른쪽 아래 버튼으로 모두의 빛을 모읍니다.</p></div></li>' +
-            '</ol>' +
-            '<p class="howto-foot">자리를 비운 사이에도 미소가 쌓입니다 · 최대 8시간<br>미소를 받으면 선생님께 알려주세요 안내가 떠요<br>1회 최대 20,000미소 · 13 스테이지부터 안개가 짙어져요<br>전투 화면 왼쪽 아래 <b>게임 방법</b>에서 다시 볼 수 있어요.</p>' +
-          '</div>' +
-        '</div>' +
-        '<div class="welcome-foot">' +
-          '<button class="btn-primary" id="welcome-start">여정 시작</button>' +
-        '</div>' +
-      '</div>',
-      { sticky: true }
-    );
-    m.querySelector('#welcome-start').addEventListener('click', function () {
-      SFX.init();
-      SFX.play('click');
-      closeModal();
-      Game.startJourney();
-    });
+    const m = modal('<div class="welcome"><p class="eyebrow">처음이라도 괜찮아요</p><h2>동행과 함께 별길을 걸어요</h2>' +
+      '<div class="welcome-steps"><div><b>1 · 동행 만나고 키우기</b><p>무료 소환으로 동행을 만나고, 성장 미소로 레벨을 올려요.</p></div>' +
+      '<div><b>2 · 도전하고 금고 수령하기</b><p>전투는 자동이에요. 포인트가 쌓이면 멈추고 수령하세요. 하루 두 번 도전할 수 있어요.</p></div>' +
+      '<div><b>3 · 선생님께 보상 청구하기</b><p>청구서를 복사해 제출하세요. 72시간 안에 청구하지 않으면 보상이 사라져요.</p></div></div>' +
+      '<p class="info-note">화면 위 안내 버튼이 다음 행동을 알려줘요.<br>오늘 보상 합계 5,000미소 초과는 극한 도전이에요. 안전하게 수령하는 것도 좋은 선택이에요!</p>' +
+      '<button class="btn-primary" id="welcome-start">무료 동행부터 만나볼래요</button></div>', {sticky:true});
+    m.querySelector('#welcome-start').addEventListener('click', function () { SFX.init(); closeModal(); Game.startJourney(); showTab('summon'); });
   }
 
   /* ---------------- banner / toast ---------------- */
@@ -1529,6 +1371,8 @@ const UI = (function () {
     updateKeeperHUD: updateKeeperHUD,
     openTeacherLog: openTeacherLog,
     openTeacherCertificate: openTeacherCertificate,
+    openChallengeResult: openChallengeResult,
+    openSyncNotice: openSyncNotice,
     renderChallengePot: renderChallengePot,
     updateDailyBadge: updateDailyBadge,
     openDailyLimitModal: openDailyLimitModal,

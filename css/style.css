@@ -2757,3 +2757,47 @@ p, h1, h2, h3 { margin: 0; }
 .nav-btn-cert svg {
   filter: drop-shadow(0 0 6px rgba(255, 212, 121, 0.5));
 }
+
+/* Challenge v2: growth wallet and daily teacher rewards are distinct. */
+[hidden] { display: none !important; }
+.currency-label { font-size: 10px; color: #c6d4eb; }
+.currency-label { white-space: nowrap; }
+.challenge-summary { flex: 0 0 auto; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 12px; padding: 8px 12px; margin: 2px 14px 4px; background: rgba(16,25,47,.86); border: 1px solid rgba(143,220,255,.23); border-radius: 10px; }
+.challenge-summary > div { display: flex; flex-direction: column; gap: 2px; }
+.challenge-summary > div > span { font-size: 11px; color: #b9cbe5; }
+.challenge-summary b { font-size: 15px; color: #ffe4a3; }
+.challenge-summary .btn-primary { min-height: 38px; padding: 7px 12px; font-size: 12px; }
+.challenge-summary p { grid-column: 1/-1; font-size: 10px; line-height: 1.45; color: #b3c6df; }
+.result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0; }
+.result-grid > div { padding: 16px 12px; background: rgba(143,220,255,.08); border-radius: 12px; display: flex; flex-direction: column; gap: 8px; }
+.result-grid span, .result-grid small, .cert-stat-box small { font-size: 11px; color: #bdcce2; line-height: 1.6; }
+.result-grid b { font-size: 21px; color: #ffe4a3; }
+.settlement-list { list-style: none; margin: 16px 0; padding: 0; }
+.settlement-list li { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,.1); font-size: 11px; }
+.settlement-list li span { overflow-wrap: anywhere; color: #c5d5eb; }
+.settlement-list small { grid-column: 1/-1; color: #b5c7dd; }
+.cert-stat-box small { display: block; margin-top: 4px; }
+.cert-deadline { font-size: 14px; color: #ffe4a3; line-height: 1.6; }
+.reward-day { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; margin: 10px 0; padding: 12px; min-height: 50px; }
+.reward-day small { width: 100%; text-align: left; color: #b5c7dd; }
+.btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+.cert-copy-btn { white-space: normal; }
+.claim-copy-text { width: 100%; min-height: 240px; padding: 12px; border: 1px solid #60718e; border-radius: 10px; color: #edf3ff; background: #10172c; font: 13px/1.7 sans-serif; resize: vertical; }
+.nav { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 420px) { .challenge-summary { margin-left: 8px; margin-right: 8px; } .cert-grid { grid-template-columns: 1fr; } .cert-title { font-size: 20px; } }
+
+.tutorial-focus { outline: 2px solid #ffe4a3; outline-offset: 3px; box-shadow: 0 0 16px rgba(255,218,140,.32); }
+.welcome-steps { display: grid; gap: 10px; margin: 18px 0; text-align: left; }
+.welcome-steps > div { padding: 12px 14px; background: rgba(143,220,255,.06); border: 1px solid rgba(143,220,255,.16); border-radius: 10px; }
+.welcome-steps b { color: #ffe4a3; font-size: 15px; }
+.welcome-steps p { margin-top: 5px; font-size: 13px; line-height: 1.7; color: #bdcce2; }
+@media (max-width: 600px) {
+  .guide-banner { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 10px; padding: 10px 12px; }
+  .guide-badge { grid-column: 1 / -1; min-width: 0; }
+  .guide-badge b { font-size: 13px; white-space: normal; }
+  .guide-desc { grid-column: 1; min-width: 0; font-size: 12px; line-height: 1.6; }
+  .guide-action-btn { grid-column: 2; padding: 8px 12px; min-height: 40px; max-width: 120px; white-space: normal; font-size: 12px; }
+  .brand-text { min-width: 0; }
+  .brand-text span { max-width: 125px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .party-lv { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}

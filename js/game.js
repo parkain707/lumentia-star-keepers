@@ -11,6 +11,8 @@ var Game = (function () {
   let offlineShown = false;
   let lastTick = 0;
   let resetting = false;
+  let loadedSave = null;
+  let staleTab = false;
 
   function num(value, fallback) {
     const n = Number(value);
@@ -19,10 +21,7 @@ var Game = (function () {
 
   /* ---------------- state ---------------- */
 
-  function getTodayStr() {
-    const d = new Date();
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-  }
+  function getTodayStr() { return Challenge.day(); }
 
   function freshState() {
     const heroes = {};
@@ -30,7 +29,7 @@ var Game = (function () {
       heroes[id] = { lv: 1, star: 1, shards: 0 };
     });
     return {
-      v: 1,
+      v: 2,
       gold: START_GOLD,
       gems: START_GEMS,
       highest: 0,
@@ -51,8 +50,10 @@ var Game = (function () {
       pity: 0,
       tutorial: false,
       sfx: true,
-      challengePot: 0,
-      challengeStreak: 0,
+      run: null,
+      rewardDays: {},
+      migration: null,
+      onboarding: {grown: false},
       dailyPlays: { date: getTodayStr(), count: 0 },
       lastSeen: Date.now(),
       createdAt: Date.now(),
@@ -72,6 +73,7 @@ var Game = (function () {
     let raw = null;
     const key = getActiveSaveKey();
     try { raw = localStorage.getItem(key); } catch (e) { raw = null; }
+    loadedSave = raw;
     if (!raw) return freshState();
 
     let data;
@@ -86,14 +88,7 @@ var Game = (function () {
     s.pity = Math.max(0, Math.min(GACHA.pity, Math.floor(num(data.pity, 0))));
     s.tutorial = !!data.tutorial;
     s.sfx = data.sfx !== false;
-    s.challengePot = Math.min(20000, Math.max(0, Math.floor(num(data.challengePot, 0))));
-    s.challengeStreak = Math.max(0, Math.floor(num(data.challengeStreak, 0)));
-    const today = getTodayStr();
-    if (data.dailyPlays && typeof data.dailyPlays === 'object' && data.dailyPlays.date === today) {
-      s.dailyPlays = { date: today, count: Math.max(0, Math.floor(num(data.dailyPlays.count, 0))) };
-    } else {
-      s.dailyPlays = { date: today, count: 0 };
-    }
+    s.onboarding = {grown: !!(data.onboarding && data.onboarding.grown)};
     s.lastSeen = num(data.lastSeen, Date.now());
     s.createdAt = num(data.createdAt, Date.now());
 
@@ -127,6 +122,7 @@ var Game = (function () {
       };
     });
     s.heroes = heroes;
+    if (s.owned.some(function (id) { return heroes[id].lv > 1; })) s.onboarding.grown = true;
 
     let party = Array.isArray(data.party) ? data.party.filter(function (id) {
       return s.owned.indexOf(id) >= 0;
@@ -151,16 +147,44 @@ var Game = (function () {
       if (gold > 0) s.pending = { gold: gold, seconds: seconds };
     }
 
+    Challenge.migrate(data, s, getDeviceDailyUsed(getTodayStr()), getLegacyDailyReward(getTodayStr()));
+    Challenge.expire(s);
+    if (data.v !== 2) {
+      // Keep the exact original save before making the one-time balance correction.
+      try {
+        const backupKey = key + '.before-v2';
+        if (!localStorage.getItem(backupKey)) localStorage.setItem(backupKey, raw);
+      } catch (e) { throw new Error('기존 기록을 백업할 공간이 부족합니다. 저장 공간을 확보해 주세요.'); }
+    }
     return s;
   }
 
   function save() {
-    if (!state || resetting) return;
-    state.lastSeen = Date.now();
-    const key = getActiveSaveKey();
+    if (!state || resetting || staleTab || !Auth.getCurrentUser()) return false;
     try {
-      localStorage.setItem(key, JSON.stringify(state));
-    } catch (e) { /* storage may be unavailable */ }
+      if (localStorage.getItem(getActiveSaveKey()) !== loadedSave) {
+        staleTab = true;
+        if (typeof Battle !== 'undefined') Battle.pause();
+        if (window.UI) UI.openSyncNotice();
+        return false;
+      }
+    } catch (e) { return false; }
+    if (typeof Battle !== 'undefined' && state.run && state.run.status === 'active') {
+      const snapshot = Battle.snapshot();
+      if (snapshot) state.run.snapshot = snapshot;
+    }
+    state.lastSeen = Date.now();
+    try {
+      const serialized = JSON.stringify(state);
+      localStorage.setItem(getActiveSaveKey(), serialized);
+      loadedSave = serialized;
+      return true;
+    }
+    catch (e) {
+      if (typeof Battle !== 'undefined') Battle.pause();
+      if (window.UI) UI.toast('저장 공간이 부족해 일시 정지했습니다. 공간을 확보한 뒤 새로고침하세요.', 'bad');
+      return false;
+    }
   }
 
   /* ---------------- economy ---------------- */
@@ -170,21 +194,17 @@ var Game = (function () {
     return BALANCE.goldPerSec * Math.pow(BALANCE.goldPerSecGrowth, n);
   }
 
-  function currentStage() {
-    return state ? state.highest + 1 : 1;
-  }
+  function currentStage() { return state && state.run ? state.run.stage : 1; }
 
   function smileCap(raw) {
     return Math.max(0, Math.min(BALANCE.maxReward, Math.round(num(raw, 0))));
   }
 
   function reportSmile(amount, label) {
-    if (!state) return;
-    const value = smileCap(amount);
-    if (value <= 0) return;
-    state.reports.push({ t: Date.now(), amount: value, label: label || '미소 보상' });
-    if (state.reports.length > 60) state.reports.splice(0, state.reports.length - 60);
-    if (window.UI && UI.showTeacherReport) UI.showTeacherReport(value, label || '미소 보상');
+    // Growth income is never a teacher claim. Keep only a local growth history.
+    if (!state || amount <= 0) return;
+    state.reports.push({t: Date.now(), amount: smileCap(amount), label: label || '성장 미소'});
+    state.reports = state.reports.slice(-60);
   }
 
   function levelCostOf(hero, lv) {
@@ -303,6 +323,7 @@ var Game = (function () {
   }
 
   function afterGrowth() {
+    state.onboarding.grown = true;
     partyPower();
     if (typeof Battle !== 'undefined') Battle.syncParty();
     save();
@@ -536,15 +557,10 @@ var Game = (function () {
   /* ---------------- battle rewards ---------------- */
 
   function rewardKill(stage, isBoss) {
-    if (!state) return 0;
-    const gold = smileCap(
-      BALANCE.killGold *
-      Math.pow(BALANCE.goldGrowth, Math.max(0, stage - 1)) *
-      (isBoss ? BALANCE.bossGoldMult : 1)
-    );
-    state.gold += gold;
-    state.stats.totalGold += gold;
-    reportSmile(gold, isBoss ? '성좌의 문' : '별빛 산책');
+    if (!state || !state.run || state.run.status !== 'active') return 0;
+    const gold = smileCap(BALANCE.killGold * Math.pow(BALANCE.goldGrowth, Math.max(0, stage - 1)) * (isBoss ? BALANCE.bossGoldMult : 1));
+    state.gold += gold; state.stats.totalGold += gold; state.run.growth += gold;
+    save();
     return gold;
   }
 
@@ -555,198 +571,112 @@ var Game = (function () {
   }
 
   function stageCleared(stage, boss) {
-    if (!state) return { gold: 0, gems: 0 };
+    const run = state && state.run;
+    if (!run || run.status !== 'active' || stage !== run.stage || stage <= run.cleared) return {gold: 0, gems: 0, points: 0, pot: 0};
     const first = stage > state.highest;
-    let gold = Math.round(BALANCE.killGold * 1.5 * Math.pow(BALANCE.goldGrowth, Math.max(0, stage - 1)));
-    let gems = 0;
-    let shards = null;
-
+    const gold = smileCap(170 * Math.pow(BALANCE.goldGrowth, stage - 1));
+    let gems = 0, shards = null;
     if (first) {
       state.highest = stage;
-      gems = boss ? 45 : 15;
-      state.gems += gems;
-      gold += Math.round(20 * Math.pow(BALANCE.goldGrowth, Math.max(0, stage - 1)));
-
+      gems = boss ? 45 : 15; state.gems += gems;
       if (stage % 10 === 0) {
-        const pool = state.owned.filter(function (id) {
-          return state.heroes[id] && state.heroes[id].star < BALANCE.maxStar;
-        });
-        const target = pool.length
-          ? pool[Math.floor(Math.random() * pool.length)]
-          : state.owned[0];
-        if (target && state.heroes[target]) {
-          const amount = 10 + Math.floor(stage / 10) * 2;
-          state.heroes[target].shards += amount;
-          shards = { name: HERO_BY_ID[target].name + ' 조각', amount: amount };
-        }
+        const pool = state.owned.filter(function (id) { return state.heroes[id].star < BALANCE.maxStar; });
+        const id = pool[Math.floor(Math.random() * pool.length)];
+        if (id) { const n = 10 + Math.floor(stage / 10) * 2; state.heroes[id].shards += n; shards = {name: HERO_BY_ID[id].name + ' 조각', amount: n}; }
       }
     }
-
-    gold = smileCap(gold);
-
-    // Accumulate into Challenge Pot!
-    const prevPot = state.challengePot || 0;
-    const addedPot = Math.min(20000 - prevPot, gold);
-    state.challengePot = Math.min(20000, prevPot + addedPot);
-    state.challengeStreak = (state.challengeStreak || 0) + 1;
-    partyPower();
-    save();
-
-    if (window.UI) {
-      UI.renderHUD();
-      UI.renderChallengePot();
-      const missions = document.getElementById('screen-missions');
-      if (missions && missions.classList.contains('active')) UI.renderMissions();
-    }
-
-    return {
-      gold: addedPot,
-      pot: state.challengePot,
-      gems: gems,
-      shards: shards,
-      isHard: state.challengePot >= 2500
-    };
+    state.gold += gold; state.stats.totalGold += gold; run.growth += gold;
+    const points = Challenge.accumulate(state, stage, gold);
+    const result = {gold: gold, points: points, pot: run.pot, gems: gems, shards: shards};
+    partyPower(); save();
+    if (window.UI) UI.refreshAll();
+    if (run.pot > 0 && run.pot >= 20000 - Challenge.allocated(state, run.date)) cashoutChallengePot();
+    return result;
   }
 
   const DEVICE_DAILY_KEY = 'starlight_device_daily_v1_';
-
-  function getDeviceDailyUsed(todayStr) {
-    try {
-      const val = localStorage.getItem(DEVICE_DAILY_KEY + todayStr);
-      return val ? Math.max(0, parseInt(val, 10) || 0) : 0;
-    } catch (e) {
-      return 0;
-    }
+  function getDeviceDailyUsed(date) {
+    try { return Challenge.integer(localStorage.getItem(DEVICE_DAILY_KEY + date), 2); } catch (e) { return 0; }
   }
-
-  function setDeviceDailyUsed(todayStr, count) {
-    try {
-      localStorage.setItem(DEVICE_DAILY_KEY + todayStr, String(count));
-    } catch (e) {}
+  function setDeviceDailyUsed(date, used) {
+    try { localStorage.setItem(DEVICE_DAILY_KEY + date, String(used)); } catch (e) { /* account save remains authoritative for this profile */ }
   }
-
-  const DEVICE_DAILY_REWARD_KEY = 'starlight_device_daily_reward_v1_';
-
-  function getDailyRewardClaimed() {
-    const today = getTodayStr();
-    let dev = 0;
-    try {
-      const v = localStorage.getItem(DEVICE_DAILY_REWARD_KEY + today);
-      dev = v ? Math.max(0, parseInt(v, 10) || 0) : 0;
-    } catch (e) {}
-    let user = 0;
-    if (state && state.dailyReward && state.dailyReward.date === today) {
-      user = Math.max(0, Math.floor(state.dailyReward.amount || 0));
-    }
-    return Math.min(20000, Math.max(dev, user));
+  function getLegacyDailyReward(date) {
+    try { return Challenge.integer(localStorage.getItem('starlight_device_daily_reward_v1_' + date), 20000); } catch (e) { return 0; }
   }
-
-  function addDailyRewardClaimed(amount) {
-    const today = getTodayStr();
-    const cur = getDailyRewardClaimed();
-    const updated = Math.min(20000, cur + Math.max(0, Math.floor(amount)));
-    try {
-      localStorage.setItem(DEVICE_DAILY_REWARD_KEY + today, String(updated));
-    } catch (e) {}
-    if (state) {
-      state.dailyReward = { date: today, amount: updated };
-      save();
-    }
-    return updated;
-  }
-
+  function getDailyRewardClaimed(date) { return state ? Challenge.total(state, date || getTodayStr()) : 0; }
   function checkDailyPlays() {
-    if (!state) return { available: 0, max: 2, canPlay: false, used: 2 };
-    const today = getTodayStr();
-    if (!state.dailyPlays || state.dailyPlays.date !== today) {
-      state.dailyPlays = { date: today, count: 0 };
-    }
-    const userUsed = state.dailyPlays.count || 0;
-    const deviceUsed = getDeviceDailyUsed(today);
-    // 계정을 새로 만들어도 기기/브라우저 기준으로 2회 초과 불가!
-    const used = Math.max(userUsed, deviceUsed);
-    const available = Math.max(0, 2 - used);
-    return {
-      available: available,
-      used: used,
-      max: 2,
-      canPlay: available > 0
-    };
+    if (!state) return {available: 0, max: 2, used: 2, canPlay: false};
+    const date = getTodayStr();
+    const used = Math.max(Challenge.entry(state, date).used, getDeviceDailyUsed(date));
+    return {available: Math.max(0, 2 - used), max: 2, used: used, canPlay: used < 2};
   }
-
-  function consumeDailyPlay() {
-    if (!state) return false;
-    const status = checkDailyPlays();
-    if (!status.canPlay) return false;
-    const newCount = status.used + 1;
-    const today = getTodayStr();
-    state.dailyPlays = { date: today, count: newCount };
-    setDeviceDailyUsed(today, newCount);
-    save();
-    if (window.UI) UI.updateDailyBadge();
-    return true;
-  }
-
-  function getChallengePot() {
-    return state ? Math.min(20000, Math.max(0, state.challengePot || 0)) : 0;
-  }
-
+  function getChallengePot() { return state && state.run && state.run.status === 'active' ? state.run.pot : 0; }
   function getDifficultyMultiplier() {
-    if (!state) return { hpMult: 1, atkMult: 1, isHard: false, pot: 0 };
-    const pot = Math.min(20000, Math.max(0, state.challengePot || 0));
-    if (pot < 2500) {
-      return { hpMult: 1.0, atkMult: 1.0, isHard: false, pot: pot };
-    }
-    // 🔥 2,500 미소 이상 구간: '통곡의 벽' 극악 난이도 발동!
-    // 2500 미소부터는 몬스터 체력 3.0배, 공격력 2.5배에서 급격히 증가하여 일반 파티는 버틸 수 없음
-    const excess = pot - 2500;
-    const ramp = excess / 600;
-    const hpMult = 3.2 + ramp * 3.5;
-    const atkMult = 2.6 + ramp * 2.8;
+    const run = state && state.run;
+    const nextPoints = smileCap(170 * Math.pow(BALANCE.goldGrowth, currentStage() - 1));
+    const projected = run ? Challenge.allocated(state, run.date) + run.pot + nextPoints : 0;
+    if (!run || run.status !== 'active' || projected < 5000) return {hpMult: 1, atkMult: 1, isHard: false, projected: projected};
+    const baseline = run.baseline || combatBaseline();
+    const excess = (projected - 5000) / 1000;
     return {
-      hpMult: Math.min(60, hpMult),
-      atkMult: Math.min(40, atkMult),
-      isHard: true,
-      pot: pot
+      hpMult: Math.min(80, 5 + excess * 7), atkMult: Math.min(60, 4 + excess * 5), isHard: true, projected: projected,
+      enemyHpFloor: baseline.atk * (20 + excess * 8), enemyAtkFloor: baseline.hp * (0.18 + excess * 0.06)
     };
   }
-
-  function cashoutChallengePot() {
-    if (!state || (state.challengePot || 0) <= 0) return { ok: false, amount: 0 };
-    const curDaily = getDailyRewardClaimed();
-    const remainingLimit = Math.max(0, 20000 - curDaily);
-    
-    // 🔥 하루(1일) 전체 20,000 미소 한도를 엄격하게 제한!
-    const amount = Math.min(state.challengePot, remainingLimit);
-    state.challengePot = 0;
-    state.challengeStreak = 0;
-    
-    if (amount > 0) {
-      addDailyRewardClaimed(amount);
-      state.gold += amount;
-      state.stats.totalGold += amount;
-    }
-    partyPower();
-    save();
-    reportSmile(amount, '도전 포기 수령');
-    if (window.UI) {
-      UI.renderHUD();
-      UI.renderChallengePot();
-      UI.openTeacherCertificate(getDailyRewardClaimed());
-    }
-    return { ok: true, amount: amount };
+  function combatBaseline() {
+    const party = getPartyCombat();
+    return {atk: party.reduce(function (sum, h) { return sum + h.stats.atk; }, 0), hp: party.reduce(function (sum, h) { return sum + h.stats.hp; }, 0) / Math.max(1, party.length)};
   }
-
-  function failChallengePot() {
-    if (!state) return { lost: 0 };
-    const lost = state.challengePot || 0;
-    state.challengePot = 0;
-    state.challengeStreak = 0;
-    save();
-    if (window.UI) {
-      UI.renderChallengePot();
-    }
-    return { lost: lost };
+  async function startChallenge() {
+    const action = function () {
+      if (!Auth.getCurrentUser()) return {ok: false, reason: '먼저 파수꾼으로 로그인하세요.'};
+      // Refresh under a browser lock so two tabs cannot spend the same opportunity.
+      state = load();
+      staleTab = false;
+      const before = JSON.stringify(state);
+      const id = 'LMN-' + Date.now().toString(36) + '-' + (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
+      const res = Challenge.begin(state, id, getDeviceDailyUsed(getTodayStr()));
+      if (!res.ok) { if (window.UI) UI.toast(res.reason, 'bad'); return res; }
+      state.run.baseline = combatBaseline();
+      if (!save()) { state = JSON.parse(before); return {ok: false, reason: '도전을 저장하지 못했습니다.'}; }
+      setDeviceDailyUsed(state.run.date, res.used);
+      Battle.start();
+      if (window.UI) { UI.closeModal(); UI.refreshAll(); }
+      return res;
+    };
+    if (navigator.locks) return navigator.locks.request('lumentia-daily-challenge', action);
+    return action();
+  }
+  function finishChallenge(outcome) {
+    if (!state || !state.run || state.run.status !== 'active') return {ok: false, amount: 0, lost: 0};
+    const before = JSON.stringify(state);
+    const result = Challenge.finish(state, outcome);
+    Battle.stop();
+    if (!save()) { state = JSON.parse(before); return {ok: false, amount: 0, lost: 0}; }
+    if (window.UI) { UI.refreshAll(); UI.openChallengeResult(result.run); }
+    return result;
+  }
+  function cashoutChallengePot() { return finishChallenge('cashed_out'); }
+  function failChallengePot() { return finishChallenge('failed'); }
+  function teacherLog(date) {
+    if (!state) return [];
+    const changed = Challenge.expire(state);
+    if (changed) save();
+    return Challenge.entry(state, date || getTodayStr()).records.map(function (r) { return Object.assign({}, r); });
+  }
+  function claimTeacherReward(date, ids) {
+    if (!state || !Array.isArray(ids)) return false;
+    const before = JSON.stringify(state);
+    Challenge.expire(state);
+    const rows = Challenge.entry(state, date).records;
+    const eligible = rows.filter(function (r) { return ids.indexOf(r.id) >= 0 && r.amount > 0 && !r.claimedAt; });
+    if (!ids.length || eligible.length !== ids.length) return false;
+    // Only records actually included in the copied certificate can be marked claimed.
+    rows.forEach(function (r) { if (ids.indexOf(r.id) >= 0 && r.amount > 0 && !r.claimedAt) r.claimedAt = Date.now(); });
+    if (save()) return true;
+    state = JSON.parse(before);
+    return false;
   }
 
   /* ---------------- achievements ---------------- */
@@ -858,16 +788,9 @@ var Game = (function () {
 
   function startJourney() {
     if (!state) return;
-    state.tutorial = true;
-    save();
-    Battle.start();
+    state.tutorial = true; save();
     if (window.UI) UI.refreshAll();
-    if (!offlineShown && pendingOffline) {
-      offlineShown = true;
-      setTimeout(function () {
-        if (window.UI) UI.openOffline(pendingOffline);
-      }, 400);
-    }
+    if (pendingOffline) UI.openOffline(pendingOffline);
   }
 
   function setSfx(on) {
@@ -879,7 +802,7 @@ var Game = (function () {
 
   function reset() {
     resetting = true;
-    try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* ignore */ }
+    try { localStorage.removeItem(getActiveSaveKey()); } catch (e) { /* ignore */ }
     window.location.reload();
   }
 
@@ -888,7 +811,7 @@ var Game = (function () {
   function startIdle() {
     lastTick = performance.now();
     setInterval(function () {
-      if (!state || !state.tutorial) return;
+      if (!state || staleTab || !state.tutorial || !Auth.getCurrentUser() || document.visibilityState === 'hidden') return;
       const now = performance.now();
       let dt = (now - lastTick) / 1000;
       lastTick = now;
@@ -900,7 +823,7 @@ var Game = (function () {
   }
 
   function bindPersistence() {
-    setInterval(save, 5000);
+    setInterval(function () { if (document.visibilityState !== 'hidden') save(); }, 1000);
     window.addEventListener('pagehide', save);
     document.addEventListener('visibilitychange', function () {
       if (document.visibilityState === 'hidden') {
@@ -913,99 +836,36 @@ var Game = (function () {
 
   function getGuideStep() {
     if (!state) return null;
-    // 1. 궁극기 준비
-    if (window.Battle && Battle.ult >= 100) {
-      return {
-        id: 'ult',
-        title: '궁극기 충전!',
-        desc: '별자리 합주 게이지 100%! 오른쪽 아래 [별자리 합주] 버튼을 눌러 강력한 별빛을 폭발시키세요!',
-        tab: 'battle',
-        target: 'ult'
-      };
+    const active = state.run && state.run.status === 'active';
+    const dates = Object.keys(state.rewardDays).sort().reverse();
+    const pendingDate = dates.find(function (date) {
+      Challenge.expire(state);
+      return state.rewardDays[date].records.some(function (r) { return r.amount > 0 && !r.claimedAt; });
+    });
+    const hasCashedOut = dates.some(function (date) { return state.rewardDays[date].records.some(function (r) { return r.outcome === 'cashed_out' && (r.amount > 0 || r.expiredAmount > 0); }); });
+    if (!active && state.freeTen) return {id:'summon_free', title:'1 / 5 · 동행 만나기', desc:'먼저 무료로 동행 10명을 만나보세요. 도전 횟수는 줄어들지 않아요.', action:'무료 동행 만나기', tab:'summon', target:'free_summon', focus:'btn-free-ten'};
+    if (!active && !state.onboarding.grown) return {id:'first_growth', title:'2 / 5 · 동행 키우기', desc:'성장 미소로 동행을 강하게 만들어요. 아래 버튼으로 함께 레벨을 올려보세요.', action:'동행 함께 키우기', tab:'heroes', target:'growth', focus:'btn-bulk-level'};
+    if (!active && pendingDate) return {id:'first_claim', title:'5 / 5 · 보상 청구하기', desc:'안전하게 받은 보상이 있어요! 청구서를 복사해 선생님께 제출하세요. 72시간 안에 청구해야 해요.', action:'청구서 확인', tab:'battle', target:'cert', date:pendingDate, focus:'btn-top-cert'};
+    if (!active) {
+      if (!checkDailyPlays().canPlay) return {id:'daily_done', title:'오늘의 도전 완료', desc:'오늘 두 번의 도전을 마쳤어요. 영웅을 키우고 내일 다시 만나요!', action:'보상 기록 보기', target:'records', tab:'battle'};
+      return {id:'challenge_start', title:'3 / 5 · 별길 도전', desc:'이제 도전 시작을 눌러보세요. 동행이 스스로 싸워요. 하루에 두 번 도전할 수 있어요.', action:'도전 시작', tab:'battle', target:'start', focus:'btn-start-challenge'};
     }
-    // 2. 무료 10연 소환 대기
-    if (!state.starterClaimed) {
-      return {
-        id: 'summon_free',
-        title: '무료 10회 소환',
-        desc: '첫 10회 소환은 무료입니다! 하단 [소환] 탭을 눌러 별의 인도자들을 맞이하세요!',
-        tab: 'summon',
-        target: 'summon'
-      };
-    }
-    // 3. 획득한 새 영웅 파티 미배치
-    if (state.party.length < 3 && state.owned.length > state.party.length) {
-      return {
-        id: 'party_slot',
-        title: '동행 편성',
-        desc: '새로운 동행이 대기 중입니다! [영웅] 탭에서 빈 파티 슬롯을 눌러 함께 출격하세요!',
-        tab: 'heroes',
-        target: 'heroes'
-      };
-    }
-    // 4. 레벨업 가능
-    if (state.gold >= 300 && canLevelAny()) {
-      const minLv = state.party.reduce(function (min, id) {
-        const h = state.heroes[id];
-        return h ? Math.min(min, h.lv) : min;
-      }, 999);
-      if (minLv < 30) {
-        return {
-          id: 'level_hero',
-          title: '동행 성장',
-          desc: '미소가 넉넉합니다! [영웅] 탭에서 동행들을 레벨업하여 전투력을 강화하세요!',
-          tab: 'heroes',
-          target: 'heroes'
-        };
-      }
-    }
-    // 5. 달성된 임무 보상 수령
-    if (hasClaimableAchievement()) {
-      return {
-        id: 'mission_reward',
-        title: '임무 달성',
-        desc: '달성한 임무가 있습니다! [임무] 탭에서 소중한 별빛 보상을 수령하세요!',
-        tab: 'missions',
-        target: 'missions'
-      };
-    }
-    // 6. 가챠 10연차 가능 (별빛 2500 이상)
-    if (state.gems >= 2500) {
-      return {
-        id: 'summon_gems',
-        title: '별빛 소환',
-        desc: '별빛이 가득합니다! [소환] 탭에서 10연차 소환으로 새 동행과 성혼을 모으세요!',
-        tab: 'summon',
-        target: 'summon'
-      };
-    }
-    // 7. 일반 진행
-    return {
-      id: 'progress',
-      title: '성운 탐험',
-      desc: '동행들이 스스로 안개를 걷어내며 전진합니다. 전투를 지켜보며 미소를 수집하세요!',
-      tab: 'battle',
-      target: 'battle'
-    };
+    if (getDifficultyMultiplier().isHard) return {id:'reward_risk', title:'5,000미소 초과 · 극한 도전', desc:'이번 구간부터 오늘 보상이 5,000미소를 넘어가 매우 어려워요. 패배하면 금고를 잃어요. 지금 안전하게 수령할 수 있어요.', action:'안전하게 수령', tab:'battle', target:'cashout', focus:'btn-cashout'};
+    if (getChallengePot() > 0 && !hasCashedOut) return {id:'first_cashout', title:'4 / 5 · 금고 수령', desc:'금고에 포인트가 쌓였어요! 멈추고 수령하면 이번 도전이 끝나고 선생님께 청구할 미소가 돼요.', action:'수령 방법 보기', tab:'battle', target:'cashout', focus:'btn-cashout'};
+    if (typeof Battle !== 'undefined' && Battle.ult >= 100) return {id:'ult', title:'별자리 합주 준비!', desc:'게이지가 가득 찼어요. 별자리 합주로 적을 공격하고 동행을 회복하세요.', action:'별자리 합주', tab:'battle', target:'ult', focus:'ult-btn'};
+    return {id:'progress', title:'동행이 자동으로 싸우고 있어요', desc:'스테이지를 밝히면 금고 포인트가 쌓여요. 원하는 순간 멈추고 수령하세요. 성장 미소로 영웅도 키울 수 있어요.', action:'전투 보기', tab:'battle', target:'battle'};
   }
 
   function reloadFromAuth() {
-    state = load();
-    partyPower();
-    if (typeof Battle !== 'undefined') {
-      Battle.syncParty();
-      if (state.tutorial) Battle.start();
-    }
-    if (window.UI) {
-      UI.refreshAll();
-      UI.updateKeeperHUD();
-    }
+    if (typeof Battle !== 'undefined') Battle.stop();
+    staleTab = false;
+    state = load(); partyPower();
     pendingOffline = computeOffline();
-    if (!state.tutorial) {
-      UI.openWelcome();
-    } else if (pendingOffline) {
-      setTimeout(function () { UI.openOffline(pendingOffline); }, 350);
-    }
+    Battle.syncParty({full: true});
+    if (state.run && state.run.status === 'active') Battle.start();
+    if (window.UI) { UI.refreshAll(); UI.updateKeeperHUD(); }
+    if (!state.tutorial) UI.openWelcome();
+    else if (pendingOffline) UI.openOffline(pendingOffline);
   }
 
   function logout() {
@@ -1050,17 +910,18 @@ var Game = (function () {
     claimOffline: claimOffline,
     setSfx: setSfx,
     getGuideStep: getGuideStep,
-    teacherLog: function () { return state ? state.reports.slice() : []; },
+    teacherLog: teacherLog,
+    claimTeacherReward: claimTeacherReward,
+    today: getTodayStr,
+    startChallenge: startChallenge,
     reset: reset,
     save: save,
     reloadFromAuth: reloadFromAuth,
     logout: logout,
     getKeeperName: getKeeperName,
     checkDailyPlays: checkDailyPlays,
-    consumeDailyPlay: consumeDailyPlay,
     getChallengePot: getChallengePot,
     getDailyRewardClaimed: getDailyRewardClaimed,
-    addDailyRewardClaimed: addDailyRewardClaimed,
     getDifficultyMultiplier: getDifficultyMultiplier,
     cashoutChallengePot: cashoutChallengePot,
     failChallengePot: failChallengePot
@@ -1084,7 +945,7 @@ var Game = (function () {
       // Prompt Name & Password Gate for authentication
       UI.openKeeperGate();
     } else {
-      if (state.tutorial) Battle.start();
+      if (state.run && state.run.status === 'active') Battle.start();
       pendingOffline = computeOffline();
       if (!state.tutorial) {
         UI.openWelcome();
@@ -1094,6 +955,12 @@ var Game = (function () {
       }
     }
 
+    window.addEventListener('storage', function (e) {
+      if (e.key === getActiveSaveKey() && e.newValue && !staleTab && e.newValue !== loadedSave) {
+        Battle.stop(); state = load(); staleTab = true; UI.refreshAll();
+        UI.openSyncNotice();
+      }
+    });
     bindPersistence();
     startIdle();
   }

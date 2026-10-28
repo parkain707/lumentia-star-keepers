@@ -47,7 +47,7 @@ const Battle = (function () {
   let rings = [];
 
   let stage = 1;
-  let phase = 'fight';
+  let phase = 'ready';
   let phaseT = 0;
   let elapsed = 0;
   let clearStarted = false;
@@ -184,8 +184,8 @@ const Battle = (function () {
   function spawnEnemies(n) {
     enemies = [];
     const diff = (typeof Game !== 'undefined') ? Game.getDifficultyMultiplier() : { hpMult: 1, atkMult: 1, isHard: false, pot: 0 };
-    const hpBase = BALANCE.enemyHp * Math.pow(BALANCE.enemyHpGrowth, n - 1) * diff.hpMult;
-    const atkBase = BALANCE.enemyAtk * Math.pow(BALANCE.enemyAtkGrowth, n - 1) * diff.atkMult;
+    const hpBase = Math.max(BALANCE.enemyHp * Math.pow(BALANCE.enemyHpGrowth, n - 1) * diff.hpMult, diff.enemyHpFloor || 0);
+    const atkBase = Math.max(BALANCE.enemyAtk * Math.pow(BALANCE.enemyAtkGrowth, n - 1) * diff.atkMult, diff.enemyAtkFloor || 0);
     const defBase = BALANCE.enemyDef + (n - 1) * BALANCE.enemyDefGrowth;
     const hard = Math.max(0, n - BALANCE.hardStage + 1);
     const hardHp = Math.pow(BALANCE.hardHpGrowth, hard);
@@ -243,6 +243,7 @@ const Battle = (function () {
   function beginStage(n, opts) {
     opts = opts || {};
     stage = n;
+    if (Game.state.run) Game.state.run.stage = n;
     phase = 'fight';
     phaseT = 0;
     elapsed = 0;
@@ -253,6 +254,7 @@ const Battle = (function () {
     slashes = [];
     rings = [];
     spawnEnemies(n);
+    if (Game.getDifficultyMultiplier().isHard) UI.toast('고위험 도전 · 오늘 보상 5,000미소 초과 구간은 매우 어렵습니다. 금고를 잃기 전에 수령할 수 있어요.', 'bad');
     if (opts.full) syncParty({ full: true });
 
     UI.setStage(n, isBossStage(n), Game.state.highest);
@@ -281,6 +283,7 @@ const Battle = (function () {
 
     const boss = isBossStage(stage);
     const reward = Game.stageCleared(stage, boss);
+    if (!Game.state.run || Game.state.run.status !== 'active') return;
 
     heroes.forEach(function (h) {
       if (h.dead) {
@@ -294,8 +297,8 @@ const Battle = (function () {
       h.buffs = [];
     });
 
-    let sub = '도전 미소 +' + UI.fmt(reward.gold) + ' (금고: ' + UI.fmt(reward.pot) + ')';
-    if (reward.gems) sub += ' · 별빛 +' + UI.fmt(reward.gems);
+    let sub = '성장 미소 +' + fmt(reward.gold) + ' · 금고 +' + fmt(reward.points) + 'P';
+    if (reward.gems) sub += ' · 별빛 +' + fmt(reward.gems);
     if (reward.shards) sub += ' · ' + reward.shards.name + ' +' + reward.shards.amount;
     UI.showBanner('별길 ' + stage + ' 밝힘', sub);
     SFX.play('victory');
@@ -304,36 +307,13 @@ const Battle = (function () {
     ult = Math.min(100, ult + 6);
     updatePartyUI(true);
 
-    if (reward.pot >= 2500) {
-      UI.toast('⚠️ 2,500 미소 돌파! 상급 난이도로 적이 급격히 강해집니다. 패배 시 전액 상실되니 언제든 수령하세요.');
-    }
+    Game.save();
   }
 
   function startDefeat(timeout) {
-    if (phase !== 'fight') return;
-    phase = 'defeat';
-    phaseT = 4.5;
-    ult = 0;
-    ultReady = false;
-
-    const failInfo = (typeof Game !== 'undefined') ? Game.failChallengePot() : { lost: 0 };
+    if (phase !== 'fight' || !started) return;
     SFX.play('defeat');
-
-    if (failInfo.lost > 0) {
-      UI.showBanner(
-        '도전 실패 · 미소 전액 상실',
-        '상급 단계에서 패배하여 누적된 ' + UI.fmt(failInfo.lost) + ' 미소를 모두 상실했습니다!',
-        'bad'
-      );
-      UI.toast('💥 상급 단계 패배! 안개에 휩싸여 ' + UI.fmt(failInfo.lost) + ' 미소를 잃었습니다. 위험하기 전에 수령하세요!');
-    } else {
-      UI.showBanner(
-        '잠시 쉬어가요',
-        timeout ? '별빛을 조금 더 모으면 다시 걸을 수 있어요' : '동행들이 기운을 고르고 곧 다시 걷습니다',
-        ''
-      );
-      UI.toast('동행을 성장시키면 더 먼 별길로 갈 수 있어요');
-    }
+    Game.failChallengePot();
   }
 
   /* ---------------- combat ---------------- */
@@ -614,7 +594,7 @@ const Battle = (function () {
   /* ---------------- ultimate ---------------- */
 
   function castUltimate() {
-    if (phase !== 'fight') return false;
+    if (!started || phase !== 'fight') return false;
     if (ult < 100) {
       SFX.play('error');
       UI.toast('별자리 합주 충전 중 · ' + Math.floor(ult) + '%', 'bad');
@@ -739,7 +719,7 @@ const Battle = (function () {
 
   function simulate(dt) {
     time += dt;
-    if (!started) return;
+    if (!started || document.visibilityState === 'hidden') return;
     shake = Math.max(0, shake - dt * 42);
     flash = Math.max(0, flash - dt * 3.1);
     ultFx = Math.max(0, ultFx - dt * 1.25);
@@ -753,9 +733,6 @@ const Battle = (function () {
       if (phaseT <= 0) {
         if (phase === 'clear') {
           nextStage();
-        } else {
-          syncParty({ full: true });
-          beginStage(stage, { retry: true });
         }
       }
     }
@@ -1080,29 +1057,43 @@ const Battle = (function () {
     }
   }
 
+  function snapshot() {
+    if (!started || !Game.state.run || Game.state.run.status !== 'active') return null;
+    return JSON.parse(JSON.stringify({
+      schema: 1, stage: stage, phase: phase, phaseT: phaseT, elapsed: elapsed, ult: ult, time: time, clearStarted: clearStarted,
+      heroes: heroes.map(function (h) { return {id: h.id, hp: h.hp, shield: h.shield, dead: h.dead, deadT: h.deadT, buffs: h.buffs, atkTimer: h.atkTimer, skillTimer: h.skillTimer}; }),
+      enemies: enemies,
+      projectiles: projectiles.map(function (p) { return Object.assign({}, p, {target: {id: p.target.id, side: p.source === 'enemy' ? 'hero' : 'enemy'}}); })
+    }));
+  }
   function start() {
-    if (typeof Game !== 'undefined') {
-      const daily = Game.checkDailyPlays();
-      if (!daily.canPlay && Game.getChallengePot() === 0) {
-        if (window.UI) UI.openDailyLimitModal();
-        return false;
-      }
-      if (Game.getChallengePot() === 0) {
-        const ok = Game.consumeDailyPlay();
-        if (!ok) {
-          if (window.UI) UI.openDailyLimitModal();
-          return false;
-        }
-      }
-    }
+    const run = Game.state.run;
+    if (!run || run.status !== 'active') return false;
+    const saved = run.snapshot;
     started = true;
-    syncParty({ full: true });
-    ult = 0;
-    ultReady = false;
-    beginStage(Game.currentStage(), { full: true });
-    updatePartyUI(true);
-    UI.updateUltPct(0, false);
+    syncParty({full: true});
+    ult = 0; ultReady = false;
+    beginStage(run.stage, {full: true});
+    if (saved && saved.schema === 1 && saved.stage === run.stage && ['fight', 'clear'].indexOf(saved.phase) >= 0 && Array.isArray(saved.enemies)) {
+      stage = saved.stage; phase = saved.phase; phaseT = saved.phaseT; elapsed = saved.elapsed;
+      ult = saved.ult; time = saved.time; clearStarted = !!saved.clearStarted;
+      heroes.forEach(function (h) {
+        const old = saved.heroes.find(function (x) { return x.id === h.id; });
+        if (old) Object.assign(h, old, {hp: Math.min(h.maxHp, Math.max(0, old.hp))});
+      });
+      enemies = saved.enemies;
+      projectiles = (saved.projectiles || []).map(function (p) {
+        const target = (p.target.side === 'hero' ? heroes : enemies).find(function (u) { return u.id === p.target.id; });
+        return target ? Object.assign({}, p, {target: target}) : null;
+      }).filter(Boolean);
+    }
+    updatePartyUI(true); UI.updateUltPct(ult, ult >= 100);
     return true;
+  }
+  function stop() {
+    started = false; phase = 'ended'; ult = 0; ultReady = false;
+    projectiles = []; particles = []; floaters = []; slashes = []; rings = [];
+    UI.updateUltPct(0, false);
   }
 
   function pause() {
@@ -1112,6 +1103,9 @@ const Battle = (function () {
   return {
     init: init,
     start: start,
+    stop: stop,
+    snapshot: snapshot,
+    get started() { return started; },
     pause: pause,
     syncParty: syncParty,
     castUltimate: castUltimate,

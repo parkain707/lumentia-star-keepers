@@ -1,0 +1,9 @@
+{
+  "name": "lumentia-star-keepers",
+  "private": true,
+  "version": "2.0.0",
+  "scripts": {
+    "test": "node --test tests/challenge.test.cjs",
+    "dev": "node scripts/serve.cjs"
+  }
+}
