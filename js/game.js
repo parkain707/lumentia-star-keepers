@@ -938,6 +938,7 @@ var Game = (function () {
       document.getElementById('battle-canvas'),
       document.getElementById('battle-wrap')
     );
+    Battle.syncParty({ full: true });
 
     const currentUser = (typeof Auth !== 'undefined') ? Auth.getCurrentUser() : null;
 
