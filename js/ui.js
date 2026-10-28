@@ -155,6 +155,7 @@ const UI = (function () {
       SFX.play('click');
       openSettings();
     });
+    el('btn-student-logout').addEventListener('click', openStudentLogout);
     el('btn-guide').addEventListener('click', function () {
       SFX.play('click');
       openGuide();
@@ -879,6 +880,7 @@ const UI = (function () {
   function openSyncNotice() {
     const m = modal('<div class="modal-head"><h2>다른 탭에서 여정을 이어가고 있어요</h2></div>' +
       '<p class="info-note">기록이 겹치지 않도록 이 탭을 멈췄습니다. 다른 게임 탭을 닫은 뒤 여기서 이어서 진행하세요.</p>' +
+      '<a href="/teacher" class="teacher-entry">선생님 관리 화면으로 이동</a>' +
       '<button class="btn-primary" id="resume-this-tab">이 탭에서 이어서 진행</button>', {sticky: true});
     m.querySelector('#resume-this-tab').addEventListener('click', function () { closeModal(); Game.reloadFromAuth(); });
   }
@@ -1047,9 +1049,10 @@ const UI = (function () {
         '<div><b>파수꾼 계정</b><p>현재 접속: <span class="keeper-pill">' + (typeof Game !== 'undefined' ? Game.getKeeperName() : '별의 파수꾼') + '</span></p></div>' +
         '<div style="display:flex;gap:6px">' +
           '<button class="btn-line" id="btn-copy-transfer" style="width:auto;height:34px;padding:0 10px;font-size:11px;margin:0">인수인계 코드</button>' +
-          '<button class="btn-ghost" id="btn-logout" style="width:auto;height:34px;padding:0 10px;font-size:11px">계정 전환</button>' +
+          '<button class="btn-ghost" id="btn-logout" style="width:auto;height:34px;padding:0 10px;font-size:11px">학생 로그아웃</button>' +
         '</div>' +
       '</div>' +
+      '<div class="setting-row"><div><b>선생님 관리자 계정</b><p>학생 로그아웃 없이 관리자 화면에 접속할 수 있습니다.</p></div><a href="/teacher" class="teacher-entry">선생님 관리</a></div>' +
       '<div class="setting-row">' +
         '<div><b>선생님 미소 청구 인증서</b><p>선생님께 보상 미소를 달라고 청구하는 공식 인증서를 발급합니다.</p></div>' +
         '<div style="display:flex;gap:6px">' +
@@ -1119,13 +1122,16 @@ const UI = (function () {
 
     const logoutBtn = m.querySelector('#btn-logout');
     if (logoutBtn) {
-      logoutBtn.addEventListener('click', function () {
-        SFX.play('click');
-        if (confirm('현재 파수꾼 계정에서 로그아웃하고 다른 파수꾼으로 전환하시겠습니까?')) {
-          Game.logout();
-        }
-      });
+      logoutBtn.addEventListener('click', openStudentLogout);
     }
+  }
+
+  function openStudentLogout() {
+    const m = modal('<div class="modal-head"><h2>학생 계정 로그아웃</h2></div>' +
+      '<p class="info-note">현재 학생의 영웅과 성장 기록을 저장하고 로그아웃합니다. 다시 로그인하면 이어서 할 수 있습니다.</p>' +
+      '<a href="/teacher" class="teacher-entry">선생님 관리 화면으로 바로 이동</a>' +
+      '<div class="btn-row"><button class="btn-primary" id="confirm-student-logout">학생 로그아웃</button><button class="btn-ghost" data-close>취소</button></div>');
+    m.querySelector('#confirm-student-logout').addEventListener('click', function(){Game.logout();});
   }
 
   function openReset() {
@@ -1168,6 +1174,8 @@ const UI = (function () {
   }
 
   function updateKeeperHUD() {
+    const logout = document.getElementById('btn-student-logout');
+    if (logout) logout.hidden = typeof Auth === 'undefined' || !Auth.getCurrentUser();
     const el = document.getElementById('hud-keeper-name');
     if (el && typeof Game !== 'undefined') {
       const name = Game.getKeeperName();
@@ -1196,6 +1204,7 @@ const UI = (function () {
           '</div>' +
           '<h2>파수꾼 관문</h2>' +
           '<p class="gate-sub">이름과 비밀번호로 별빛 여정을 저장하고 언제든 이어서 플레이하세요.</p>' +
+          '<a href="/teacher" class="teacher-entry">선생님 관리자 로그인</a>' +
         '</div>' +
 
         '<div class="gate-tabs">' +

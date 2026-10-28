@@ -9,7 +9,13 @@
   const time=t=>new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',dateStyle:'short',timeStyle:'medium'}).format(new Date(t));
   const label={unsubmitted:'클래스톡 수신 전',requested:'학생 제출 기록 · 수신 확인 필요',received:'수신 확인 · 지급 대기',partial:'일부 지급 완료',paid:'지급 완료',expired:'미제출 만료'};
   function message(text){$('message').textContent=text;}
-  function signedOut(){session=null;sessionStorage.removeItem('lumentia_teacher_session');records=[];audit=[];$('records').replaceChildren();$('dashboard').hidden=true;$('login-panel').hidden=false;}
+  function loginMode(){
+    $('login-title').textContent=configured?'선생님 로그인':'선생님 계정 최초 설정';
+    $('login-description').textContent=configured?'등록한 선생님 이메일과 비밀번호로 로그인하세요. 학생 계정의 로그인 상태와 별도로 이용할 수 있습니다.':'전달받은 일회용 설정 키로 선생님 비밀번호를 직접 설정하세요. 설정을 마치면 이 키는 폐기됩니다.';
+    $('setup-field').hidden=configured;$('confirm-field').hidden=configured;$('setup-key').required=!configured;$('password-confirm').required=!configured;
+    $('password').autocomplete=configured?'current-password':'new-password';$('login-button').textContent=configured?'로그인':'비밀번호 설정하고 로그인';
+  }
+  function signedOut(){session=null;sessionStorage.removeItem('lumentia_teacher_session');records=[];audit=[];prior=[];priorAllocations=[];students=[];$('records').replaceChildren();$('prior-payments').replaceChildren();$('account').textContent='';$('dashboard').hidden=true;$('login-panel').hidden=false;$('logout').hidden=true;loginMode();}
   async function api(action,data={}){
     const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,...data,...(session?{token:session.token}:{})}),signal:AbortSignal.timeout(20000)});
     const result=await response.json();
@@ -75,7 +81,7 @@
       const password=$('password').value;
       if(!configured && (password.length<12 || new TextEncoder().encode(password).length>72 || password!==$('password-confirm').value))throw new Error('12자 이상 비밀번호를 동일하게 두 번 입력해 주세요. 한글 등은 UTF-8 기준 최대 72바이트입니다.');
       session=await api(configured?'login':'setup',{email:$('email').value.trim(),password,setupKey:$('setup-key').value.trim()});
-      sessionStorage.setItem('lumentia_teacher_session',JSON.stringify(session));$('password').value='';$('password-confirm').value='';$('setup-key').value='';configured=true;
+      sessionStorage.setItem('lumentia_teacher_session',JSON.stringify(session));$('password').value='';$('password-confirm').value='';$('setup-key').value='';configured=true;loginMode();$('logout').hidden=false;
       await refresh();message('선생님으로 로그인했습니다.');
     }catch(e){message(e.message);}finally{busy=false;$('login-button').disabled=false;}
   });
@@ -84,8 +90,7 @@
   $('search').addEventListener('input',draw);$('filter').addEventListener('change',draw);
   async function boot(){
     try{
-      const state=await api('status');configured=state.configured;
-      if(!configured){$('login-title').textContent='선생님 계정 최초 설정';$('login-description').textContent='전달받은 일회용 설정 키로 선생님 비밀번호를 직접 설정하세요. 설정을 마치면 이 키는 폐기됩니다.';$('setup-field').hidden=false;$('confirm-field').hidden=false;$('setup-key').required=true;$('password-confirm').required=true;$('password').autocomplete='new-password';$('login-button').textContent='비밀번호 설정하고 로그인';}
+      const state=await api('status');configured=state.configured;loginMode();$('logout').hidden=!session;
       if(session && session.expiresAt>Date.now())await refresh();else signedOut();
     }catch(e){message(e.message);}
   }
