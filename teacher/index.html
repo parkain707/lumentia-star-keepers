@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>루멘티아 · 선생님 보상 관리</title><link rel="stylesheet" href="/teacher/style.css"></head>
 <body><main>
-  <header><div><p class="eyebrow">LUMENTIA · TEACHER</p><h1>선생님 보상 관리</h1><p>클래스톡 수신을 확인하고, 지급한 미소를 기록하세요.</p></div><div class="header-account"><a href="/">학생 게임으로</a><button id="logout" class="secondary" hidden>관리자 로그아웃</button></div></header>
+  <header><div><p class="eyebrow">LUMENTIA · TEACHER</p><h1>선생님 보상 관리</h1><p>인증서를 확인하고, 학생에게 준 보상을 기록하는 곳이에요.</p></div><div class="header-account"><a href="/">학생 게임으로</a><button id="logout" class="secondary" hidden>관리자 로그아웃</button></div></header>
   <p id="message" role="status" aria-live="polite"></p>
   <section id="login-panel" class="panel narrow"><h2 id="login-title">선생님 로그인</h2><p id="login-description">선생님 계정으로 로그인해야 학생별 보상 기록을 볼 수 있습니다.</p>
     <form id="login-form"><label>이메일<input id="email" type="email" autocomplete="username" required></label>
@@ -10,13 +10,16 @@
     <label id="confirm-field" hidden>비밀번호 확인<input id="password-confirm" type="password" autocomplete="new-password"></label>
     <button id="login-button" type="submit">로그인</button></form><p class="muted">학생의 게임 비밀번호와 별도로 관리됩니다. 공용 PC에서는 사용 후 로그아웃해 주세요.</p></section>
   <section id="dashboard" hidden>
-    <div class="toolbar"><p id="account"></p><div><button id="refresh" class="secondary">새로고침</button></div></div>
-    <div class="stats"><article><span>누적 획득</span><b id="total-earned">0</b></article><article><span>수신 확인 전 잔액</span><b id="total-unconfirmed">0</b></article><article><span>수신 확인 · 지급 대기</span><b id="total-pending">0</b></article><article><span>지급 완료</span><b id="total-paid">0</b></article></div>
-    <div class="panel"><h2>기지급 내역</h2><p class="muted">이미 지급한 금액입니다. 오늘 보상에 한 번만 반영하며, 아직 연결되지 않은 금액은 보관됩니다. 이름이 다른 학생은 학생 번호를 확인해 연결하세요.</p><div id="prior-payments"></div></div>
-    <div class="panel"><p class="notice">인증서는 선생님 클래스톡으로 도착해야 효력이 있습니다. 학생 이름·학생 번호·정산 번호를 수신 내역과 대조해 주세요. 실제 지급을 마친 뒤 지급 완료를 기록하면 학생의 청구 잔액에 반영됩니다. 성장 미소와 영웅 기록은 유지됩니다.</p>
-      <div class="filters"><label>학생·정산 검색<input id="search" type="search" placeholder="이름, 학생 번호, 정산 번호"></label><label>표시할 내역<select id="filter"><option value="pending">지급 전 내역</option><option value="paid">지급 완료</option><option value="expired">미제출 만료</option><option value="all">전체 내역</option></select></label></div>
-      <div id="records"></div><p id="updated" class="muted"></p>
-    </div>
+    <div class="toolbar"><p id="account"></p><button id="refresh" class="secondary">최신 내용 확인</button></div>
+    <section class="next-task" aria-labelledby="next-title"><p class="eyebrow">지금 할 일</p><h2 id="next-title">클래스톡에 도착한 인증서를 확인해 주세요</h2><p id="next-description"></p><div class="steps" id="flow-steps"><p><b>1</b><span>클래스톡 인증서에서<br>학생과 보상 금액 확인</span></p><p><b>2</b><span>평소 사용하시는 서비스에서<br>학생에게 미소 지급</span></p><p><b>3</b><span>이 화면에서<br>‘보상 줬어요’ 기록</span></p></div></section>
+    <nav class="view-tabs" aria-label="보상 업무"><button id="tab-new" type="button" aria-pressed="true">새로 보상 줄 학생</button><button id="tab-prior" type="button" aria-pressed="false">이미 준 보상</button><button id="tab-history" type="button" aria-pressed="false">지난 기록</button></nav>
+    <section id="prior-panel" class="panel" hidden><h2>이미 준 보상은 다시 주지 않으셔도 돼요</h2><p id="prior-summary"></p><div id="prior-help" class="notice"></div><div id="prior-payments"></div></section>
+    <section id="records-panel" class="panel"><h2 id="records-title">새로 보상 줄 학생</h2><p id="records-help">클래스톡에 인증서가 도착한 학생만 처리해 주세요. 학생이 게임에서 ‘보냈어요’를 눌러도 실제 도착 여부는 선생님이 확인해야 해요.</p>
+      <div class="filters"><label>학생 찾기<input id="search" type="search" placeholder="학생 이름으로 찾기"></label><label id="filter-label" hidden>지난 기록 보기<select id="filter"><option value="all">전체 기록</option><option value="paid">보상을 준 기록</option><option value="expired">제출 기한이 지난 기록</option></select></label></div>
+      <div id="records"></div>
+    </section>
+    <details class="panel compact-details"><summary>전체 금액과 기록은 어떻게 계산하나요?</summary><p class="muted">게임에 연결된 계정의 획득 금액과 이전에 지급하신 금액은 집계 대상이 달라요. 학생별 내역을 기준으로 확인해 주세요. 영웅과 성장 미소는 이 화면의 지급 처리로 줄어들지 않아요.</p><dl class="totals"><div><dt>게임에 연결된 계정의 누적 보상</dt><dd id="total-earned">0</dd></div><div><dt>인증서를 아직 확인하지 않은 금액</dt><dd id="total-unconfirmed">0</dd></div><div><dt>인증서 확인 후 아직 주지 않은 금액</dt><dd id="total-pending">0</dd></div><div><dt>이전 지급분을 포함해 이미 준 금액</dt><dd id="total-paid">0</dd></div></dl></details>
+    <p id="updated" class="muted"></p>
   </section>
-</main><dialog id="action-dialog"><form id="action-form"><h2 id="action-title"></h2><p id="action-description"></p><p id="action-student" class="notice"></p><label id="received-field">클래스톡 실제 수신 시각<input id="received-at" type="datetime-local" step="1"></label><label id="amount-field">이번에 지급한 미소<input id="pay-amount" type="number" min="1" step="1"></label><label>메모 (선택)<input id="note" maxlength="200" placeholder="지급 또는 수신 확인 메모"></label><div class="dialog-actions"><button id="cancel-action" type="button" class="secondary">취소</button><button id="confirm-action" type="submit">확정</button></div><p id="action-error" role="alert"></p></form></dialog>
+</main><dialog id="action-dialog"><form id="action-form"><p id="action-step" class="eyebrow"></p><h2 id="action-title"></h2><p id="action-description"></p><p id="action-student" class="notice"></p><div id="bind-field" hidden><label>이 학생의 게임 계정<select id="bind-student"></select></label><p class="muted">클래스톡 인증서의 게임 이름과 학생 번호를 대조해 주세요. 계정이 목록에 없으면 먼저 학생에게 게임 접속을 부탁하세요.</p></div><div id="received-field"><details id="received-details"><summary>인증서가 도착한 시각 확인·수정</summary><label>클래스톡에 도착한 시각<input id="received-at" type="datetime-local" step="1"></label><p class="muted">기본값은 현재 시각이에요. 이전에 도착한 인증서라면 실제 도착 시각으로 바꿔 주세요. 수령 확정 후 72시간 안에 도착한 인증서만 처리할 수 있어요.</p></details></div><label id="amount-field">실제로 준 미소<input id="pay-amount" type="number" min="1" step="1"><span class="muted">일부만 줬다면 실제로 준 금액으로 바꿔 주세요.</span></label><label>메모 (선택)<input id="note" maxlength="200" placeholder="필요한 경우에만 적어 주세요"></label><div class="dialog-actions"><button id="cancel-action" type="button" class="secondary">취소</button><button id="confirm-action" type="submit">확인</button></div><p id="action-error" role="alert"></p></form></dialog>
 <script src="/teacher/app.js" defer></script></body></html>
