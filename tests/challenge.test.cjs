@@ -67,8 +67,8 @@ test('daily reward is shared by two runs and auto-cashout uses only remaining da
 });
 test('growth kills, achievements and offline rewards never increase teacher claim',async()=>{
  const p=harness();await p.run('Game.startChallenge()');
- p.run('Game.rewardKill(5,true);Game.claimOffline({gold:20000,seconds:28800});Game.state.heroes.lumen.lv=10;Game.claimAchievement("lv10")');
- assert.ok(p.run('Game.state.gold')>20000);assert.equal(p.run('Game.getDailyRewardClaimed()'),0);
+ p.run('Game.rewardKill(5,true);Game.state.pending={gold:20000,seconds:28800};Game.claimOffline();Game.state.heroes.lumen.lv=10;Game.claimAchievement("lv10")');
+ assert.equal(p.run('Game.state.gold'),20000);assert.equal(p.run('Game.getDailyRewardClaimed()'),0);
 });
 test('stage reward duplicate cannot create extra growth or pot',async()=>{
  const p=harness();await p.run('Game.startChallenge()');p.run('Game.stageCleared(1,false)');
@@ -100,7 +100,7 @@ test('unclaimed reward remains before 72h and becomes exactly zero at 72h, survi
 });
 test('claimed rewards do not expire; only explicitly copied IDs are claimed',async()=>{
  const p=harness();await p.run('Game.startChallenge()');p.run('Game.state.run.pot=1000;Game.cashoutChallengePot()');const id=p.run('Game.teacherLog()[0].id'), date=p.run('Game.today()');
- assert.equal(p.run(`Game.claimTeacherReward('${date}', ['${id}'])`),true);
+ assert.equal(p.run(`Game.recordClassTalkSubmission('${date}', ['${id}'])`),true);
  await p.run('Game.startChallenge()');p.run('Game.state.run.pot=2000;Game.cashoutChallengePot()');p.advance(72*3600000);
  assert.equal(p.run(`Game.getDailyRewardClaimed('${date}')`),1000);const log=p.obj(`Game.teacherLog('${date}')`);assert.ok(log[0].claimedAt);assert.equal(log[1].amount,0);
 });
@@ -128,7 +128,7 @@ test('onboarding leads a new student through summon, growth, start, cashout and 
  p.run('Game.levelPartyBulk()');assert.equal(p.run('Game.getGuideStep().id'),'challenge_start');
  await p.run('Game.startChallenge()');p.step(10);assert.equal(p.run('Game.getGuideStep().id'),'first_cashout');
  p.run('Game.cashoutChallengePot()');assert.equal(p.run('Game.getGuideStep().id'),'first_claim');
- p.run('Game.claimTeacherReward(Game.today(),Game.teacherLog().map(r=>r.id))');assert.equal(p.run('Game.getGuideStep().id'),'challenge_start');
+ p.run('Game.recordClassTalkSubmission(Game.today(),Game.teacherLog().map(r=>r.id))');assert.equal(p.run('Game.getGuideStep().id'),'challenge_start');
  p.run('Game.save();Game.reloadFromAuth()');assert.equal(p.run('Game.state.onboarding.grown'),true);
 });
 test('5,000 reward threshold includes banked first-run rewards and warns before the crossing stage',async()=>{
@@ -149,7 +149,7 @@ test('high-level starting parties also receive a meaningful extreme-risk enemy f
 test('a claim made after expiry cannot mark expired records claimed',async()=>{
  const p=harness();await p.run('Game.startChallenge()');p.run('Game.state.run.pot=1000;Game.cashoutChallengePot()');
  const id=p.run('Game.teacherLog()[0].id'), date=p.run('Game.today()');p.advance(72*3600000);
- assert.equal(p.run(`Game.claimTeacherReward('${date}',['${id}'])`),false);assert.equal(p.run(`Game.teacherLog('${date}')[0].amount`),0);
+ assert.equal(p.run(`Game.recordClassTalkSubmission('${date}',['${id}'])`),false);assert.equal(p.run(`Game.teacherLog('${date}')[0].amount`),0);
  assert.equal(p.run(`Game.teacherLog('${date}')[0].claimedAt`),0);
 });
 test('storage failure cannot consume an opportunity or mark a claim completed',async()=>{
@@ -157,8 +157,89 @@ test('storage failure cannot consume an opportunity or mark a claim completed',a
  assert.equal((await p.run('Game.startChallenge()')).ok,false);assert.equal(p.run('Game.checkDailyPlays().used'),0);assert.equal(p.run('Battle.started'),false);
  options.failWrites=false;await p.run('Game.startChallenge()');p.run('Game.state.run.pot=1000;Game.cashoutChallengePot()');
  const id=p.run('Game.teacherLog()[0].id'),date=p.run('Game.today()');options.failWrites=true;
- assert.equal(p.run(`Game.claimTeacherReward('${date}',['${id}'])`),false);assert.equal(p.run(`Game.teacherLog('${date}')[0].claimedAt`),0);
+ assert.equal(p.run(`Game.recordClassTalkSubmission('${date}',['${id}'])`),false);assert.equal(p.run(`Game.teacherLog('${date}')[0].claimedAt`),0);
 });
 test('logged-out timer cannot write the previous player data into a guest slot',()=>{
  const p=harness();p.run('Game.save();Game.logout()');const before=new Map(p.storage);assert.equal(p.run('Game.save()'),false);assert.deepEqual(p.storage,before);
+});
+test('all growth income shares one daily 20,000 budget including the starting gift',async()=>{
+ const p=harness();assert.equal(p.run('Game.growthStatus().earned'),300);
+ await p.run('Game.startChallenge()');p.run('Game.rewardKill(20,false);Game.stageCleared(1,false);Game.state.pending={gold:20000,seconds:28800}');
+ const reward=p.obj('Game.claimOffline()');assert.ok(reward.gold>0 && reward.gold<20000);
+ assert.equal(p.run('Game.growthStatus().earned'),20000);assert.equal(p.run('Game.growthStatus().remaining'),0);assert.equal(p.run('Game.state.gold'),20000);
+ assert.equal(p.run('Game.rewardKill(20,true)'),0);assert.equal(p.run('Growth.credit(Game.state,1000,"idle")'),0);
+ assert.equal(p.run('Game.state.stats.totalGold'),19700);
+});
+test('spending growth currency never replenishes the earned-income limit; challenge points remain independent',async()=>{
+ const p=harness();await p.run('Game.startChallenge()');p.run('Game.state.pending={gold:20000,seconds:1000};Game.claimOffline();Game.levelPartyBulk()');
+ const wallet=p.run('Game.state.gold');assert.ok(wallet<20000);
+ const r=p.obj('Game.stageCleared(1,false)');assert.equal(r.gold,0);assert.equal(r.points,170);assert.equal(p.run('Game.state.gold'),wallet);assert.equal(p.run('Game.growthStatus().remaining'),0);
+});
+test('Korean midnight grants a new growth budget without resetting wallet, heroes, or lifetime records',()=>{
+ const p=harness({now:Date.parse('2026-10-28T14:59:50Z')});p.run('Game.state.pending={gold:20000,seconds:1000};Game.claimOffline();Game.state.heroes.lumen.lv=10');
+ const history=p.run('Game.state.stats.totalGold');p.advance(20000);
+ assert.equal(p.run('Game.growthStatus().earned'),0);assert.equal(p.run('Game.growthStatus().remaining'),20000);
+ p.run('Growth.credit(Game.state,1000,"idle")');assert.equal(p.run('Game.state.gold'),21000);assert.equal(p.run('Game.state.heroes.lumen.lv'),10);assert.equal(p.run('Game.state.stats.totalGold'),history+1000);
+});
+test('daily cap persists through save/reload and offline reward can only be collected once',()=>{
+ const p=harness();p.run('Game.state.pending={gold:20000,seconds:1000};Game.claimOffline();Game.save()');
+ assert.equal(p.run('Game.claimOffline({gold:20000}).gold'),0);
+ const q=harness({storage:p.storage});assert.equal(q.run('Game.growthStatus().earned'),20000);assert.equal(q.run('Growth.credit(Game.state,20000,"idle")'),0);
+ assert.equal(q.run('Game.state.gold'),20000);
+});
+test('idle fractions accumulate correctly and still stop exactly at the cap',()=>{
+ const p=harness();p.run('for(let i=0;i<10;i++)Growth.credit(Game.state,0.4,"idle")');assert.equal(p.run('Game.growthStatus().earned'),304);
+ p.run('Growth.credit(Game.state,30000,"offline")');assert.equal(p.run('Game.growthStatus().earned'),20000);assert.equal(p.run('Game.state.gold'),20000);
+ p.run('for(let i=0;i<10;i++)Growth.credit(Game.state,0.7,"idle")');assert.equal(p.run('Game.state.gold'),20000);
+});
+test('growth-wallet accumulation across days is not recapped on subsequent logins',()=>{
+ const p=harness();p.run('Game.state.pending={gold:20000,seconds:1000};Game.claimOffline()');p.advance(24*3600000);p.run('Growth.credit(Game.state,20000,"offline");Game.save()');
+ assert.equal(p.run('Game.state.gold'),40000);const q=harness({storage:p.storage,now:Date.parse('2026-10-29T01:00:00Z')});assert.equal(q.run('Game.state.gold'),40000);assert.equal(q.run('Game.growthStatus().earned'),20000);
+});
+test('existing v1 account sees exact correction amounts and both original backups; acknowledgment persists',()=>{
+ const old=legacy(),p=harness({storage:seed(old),acknowledge:false});
+ assert.equal(p.run('Game.state.balanceAdjustment.before'),442808);assert.equal(p.run('Game.state.balanceAdjustment.after'),20000);assert.equal(p.run('Game.state.balanceAdjustment.acknowledgedAt'),0);
+ assert.deepEqual(JSON.parse(p.storage.get(key+'.before-growth-cap-v1')),old);assert.deepEqual(p.obj('Game.state.heroes'),old.heroes);
+ const notice=p.ui.find(x=>x.method==='openBalanceAdjustment');assert.ok(notice);notice.args[1]();assert.ok(p.run('Game.state.balanceAdjustment.acknowledgedAt'));
+ const q=harness({storage:p.storage,acknowledge:false});assert.ok(!q.ui.some(x=>x.method==='openBalanceAdjustment'));assert.deepEqual(q.obj('Game.state.heroes'),old.heroes);
+});
+test('accounts already migrated to v2 get one new correction while keeping challenge records and hero history',()=>{
+ const previous=harness();previous.run('Game.state.highest=29;Game.state.heroes.lumen={lv:40,star:3,shards:19};Game.state.stats.totalGold=442808;Game.state.rewardDays[Game.today()]={used:2,opening:0,records:[]};Game.save()');
+ const data=JSON.parse(previous.storage.get(key));delete data.growthPolicyVersion;delete data.growthDaily;data.gold=60000;
+ const p=harness({storage:seed(data),acknowledge:false});assert.equal(p.run('Game.state.gold'),20000);assert.equal(p.run('Game.state.balanceAdjustment.before'),60000);assert.equal(p.run('Game.state.balanceAdjustment.after'),20000);
+ assert.equal(p.run('Game.state.stats.totalGold'),442808);assert.equal(p.run('Game.state.highest'),29);assert.deepEqual(p.obj('Game.state.heroes'),data.heroes);assert.deepEqual(p.obj('Game.state.rewardDays'),data.rewardDays);
+});
+test('correction notice pauses an active existing run and confirmation resumes its saved progress without spending an attempt',async()=>{
+ const previous=harness();await previous.run('Game.startChallenge()');previous.step(3);previous.run('Game.save()');
+ const data=JSON.parse(previous.storage.get(key));delete data.growthPolicyVersion;delete data.growthDaily;data.gold=50000;
+ const p=harness({storage:seed(data),acknowledge:false});assert.equal(p.run('Battle.started'),false);const id=p.run('Game.state.run.id');
+ const notice=p.ui.find(x=>x.method==='openBalanceAdjustment');notice.args[1]();assert.equal(p.run('Battle.started'),true);assert.equal(p.run('Game.state.run.id'),id);assert.equal(p.run('Game.checkDailyPlays().used'),1);
+});
+test('new accounts do not see a correction notice',()=>{
+ const p=harness({acknowledge:false});assert.equal(p.run('Game.state.balanceAdjustment'),null);assert.ok(!p.ui.some(x=>x.method==='openBalanceAdjustment'));
+});
+test('one-time mission rewards are preserved until a day with enough growth allowance',()=>{
+ const p=harness();p.run('Game.state.heroes.lumen.lv=10;Game.state.pending={gold:20000,seconds:1000};Game.claimOffline()');
+ const denied=p.obj('Game.claimAchievement("lv10")');assert.equal(denied.ok,false);assert.ok(!p.run('Game.state.achievements.lv10'));
+ p.advance(24*3600000);const granted=p.obj('Game.claimAchievement("lv10")');assert.equal(granted.ok,true);assert.equal(granted.reward.gold,1500);assert.equal(p.run('Game.growthStatus().earned'),1500);
+});
+test('offline credit save failure rolls back the budget, pending reward, and lifetime history',()=>{
+ const options={},p=harness(options);p.run('Game.state.pending={gold:5000,seconds:1000};Game.save()');const before=p.obj('Game.state');options.failWrites=true;
+ assert.equal(p.run('Game.claimOffline().gold'),0);assert.equal(p.run('Game.state.growthDaily.earned'),before.growthDaily.earned);assert.equal(p.run('Game.state.stats.totalGold'),before.stats.totalGold);assert.equal(p.run('Game.state.pending.gold'),5000);
+});
+test('copying a certificate is not a ClassTalk submission and does not stop 72-hour expiry',async()=>{
+ const p=harness();await p.run('Game.startChallenge()');p.run('Game.state.run.pot=1000;Game.cashoutChallengePot()');
+ const id=p.run('Game.teacherLog()[0].id'),date=p.run('Game.today()');assert.equal(p.run(`Game.recordCertificateCopy('${date}',['${id}'])`),true);
+ assert.ok(p.run('Game.teacherLog()[0].copiedAt'));assert.equal(p.run('Game.teacherLog()[0].claimedAt'),0);assert.equal(p.run('Game.teacherLog()[0].submissionChannel'),'');
+ p.advance(72*3600000);assert.equal(p.run(`Game.getDailyRewardClaimed('${date}')`),0);
+});
+test('explicit ClassTalk submission records the channel and retains the reward after 72 hours',async()=>{
+ const p=harness();await p.run('Game.startChallenge()');p.run('Game.state.run.pot=1000;Game.cashoutChallengePot()');const id=p.run('Game.teacherLog()[0].id'),date=p.run('Game.today()');
+ assert.equal(p.run(`Game.recordClassTalkSubmission('${date}',['${id}'])`),true);assert.equal(p.run('Game.teacherLog()[0].submissionChannel'),'classtalk');
+ p.advance(72*3600000);assert.equal(p.run(`Game.getDailyRewardClaimed('${date}')`),1000);assert.equal(p.run(`Game.recordClassTalkSubmission('${date}',['${id}'])`),false);
+});
+test('certificate-copy storage failure cannot accidentally mark a reward submitted',async()=>{
+ const options={},p=harness(options);await p.run('Game.startChallenge()');p.run('Game.state.run.pot=1000;Game.cashoutChallengePot()');
+ const id=p.run('Game.teacherLog()[0].id'),date=p.run('Game.today()');options.failWrites=true;
+ assert.equal(p.run(`Game.recordCertificateCopy('${date}',['${id}'])`),false);assert.equal(p.run('Game.teacherLog()[0].copiedAt'),0);assert.equal(p.run('Game.teacherLog()[0].claimedAt'),0);
 });

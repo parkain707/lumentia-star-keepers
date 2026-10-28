@@ -50,6 +50,10 @@
         </button>
       </div>
     </header>
+    <div class="growth-income-bar" aria-live="polite">
+      <span>오늘 성장 미소 획득</span><b id="growth-daily-earned">0 / 20,000</b>
+      <small id="growth-daily-note">한국 시간 자정에 초기화</small>
+    </div>
 
     <button id="teacher-report" class="teacher-report" type="button" aria-live="polite" hidden>
       <span class="teacher-report-mark" aria-hidden="true">✧</span>
@@ -65,10 +69,10 @@
       <button id="btn-top-cert" class="btn-top-cert" type="button">
         <span class="cert-emoji">📜</span>
         <div class="cert-desc-box">
-          <b class="cert-highlight-title">선생님께 미소 인증서 제출하기</b>
-          <span class="cert-highlight-desc">여기를 터치하면 인증서가 열리고 바로 복사할 수 있어요!</span>
+          <b class="cert-highlight-title">미소 인증서 · 선생님 클래스톡 제출</b>
+          <span class="cert-highlight-desc">선생님 클래스톡으로 보내야 효력이 발생해요!</span>
         </div>
-        <span class="cert-badge-action">복사하기 ➔</span>
+        <span class="cert-badge-action">인증서 열기 ➔</span>
       </button>
     </div>
 
@@ -307,6 +311,7 @@
 
   <script src="js/data.js"></script>
   <script src="js/challenge.js"></script>
+  <script src="js/growth.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/art.js"></script>
   <script src="js/auth.js"></script>

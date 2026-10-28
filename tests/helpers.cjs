@@ -19,10 +19,13 @@ function harness(options={}) {
     SFX:{play:noop,setEnabled:noop},ART:{makeBackdrop:()=>({})},addEventListener:noop,location:{reload:noop}});
   ctx.window=ctx;
   const run=code=>vm.runInContext(code,ctx);
-  for(const file of ['data','challenge','auth','ui','battle','game'])vm.runInContext(fs.readFileSync(path.join(root,'js',file+'.js'),'utf8'),ctx,{filename:file+'.js'});
+  for(const file of ['data','challenge','growth','auth','ui','battle','game'])vm.runInContext(fs.readFileSync(path.join(root,'js',file+'.js'),'utf8'),ctx,{filename:file+'.js'});
   for(const k of run('Object.keys(UI)'))if(typeof run('UI')[k]==='function')run('UI')[k]=(...args)=>ui.push({method:k,args});
   run('Auth.setCurrentUser("test-keeper")');
   run('Game.reloadFromAuth()');
+  if (options.acknowledge !== false && run('Game.state.balanceAdjustment && !Game.state.balanceAdjustment.acknowledgedAt')) {
+    run('Game.acknowledgeBalanceAdjustment(); if(Game.state.run && Game.state.run.status === "active") Battle.start()');
+  }
   run('Battle.init({getContext:()=>({})},{getBoundingClientRect:()=>({width:800,height:1000})})');
   const obj=code=>JSON.parse(JSON.stringify(run(code)));
   return {run,obj,storage,ui,ctx,errors,intervals,setNow:t=>{now=t;},advance:ms=>{now+=ms;},step:seconds=>{

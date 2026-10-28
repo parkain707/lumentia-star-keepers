@@ -31,6 +31,7 @@ const UI = (function () {
   let lastUlt = -1;
   let lastUltReady = null;
   let modalOnClose = null;
+  let modalDismissible = true;
   let reportTotal = 0;
   let reportCount = 0;
   let reportHideTimer = null;
@@ -68,6 +69,8 @@ const UI = (function () {
 
   function init() {
     els.hudGold = el('hud-gold');
+    els.growthEarned = el('growth-daily-earned');
+    els.growthNote = el('growth-daily-note');
     els.hudGems = el('hud-gems');
     els.stageNum = el('stage-num');
     els.stageChapter = el('stage-chapter');
@@ -183,7 +186,7 @@ const UI = (function () {
         if (!Game.save()) return;
         Battle.pause();
         const m = modal('<div class="modal-head"><h2>수령하고 도전을 마칠까요?</h2></div>' +
-          '<p class="info-note">금고 ' + fmt(pot) + '포인트를 보상 미소로 확정합니다.<br>성장 미소는 유지되며, 확정 보상은 72시간 안에 청구해야 합니다.</p>' +
+          '<p class="info-note">금고 ' + fmt(pot) + '포인트를 보상 미소로 확정합니다.<br>성장 미소는 유지되며, 확정 보상의 인증서는 72시간 안에 선생님 클래스톡으로 보내야 효력이 생깁니다.</p>' +
           '<div class="btn-row"><button class="btn-primary" id="confirm-cashout">수령하고 종료</button><button class="btn-ghost" data-close>계속 도전</button></div>', {
             onClose: function () { if (Game.state.run && Game.state.run.status === 'active') Battle.start(); }
           });
@@ -234,11 +237,12 @@ const UI = (function () {
         renderHUD();
       } else {
         SFX.play('error');
+        if (result.reason) toast(result.reason, 'bad');
       }
     });
 
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') closeModal();
+      if (e.key === 'Escape' && modalDismissible) closeModal();
     });
 
     renderAll();
@@ -275,6 +279,9 @@ const UI = (function () {
   function renderHUD() {
     if (!Game.state) return;
     setText(els.hudGold, fmt(Game.state.gold));
+    const growth = Game.growthStatus();
+    setText(els.growthEarned, fmt(growth.earned) + ' / ' + fmt(growth.limit));
+    setText(els.growthNote, growth.remaining > 0 ? '오늘 남은 획득 한도 ' + fmt(growth.remaining) : '오늘 획득 완료 · 한국 시간 자정에 초기화');
     setText(els.hudGems, fmt(Game.state.gems));
     setText(els.best, String(Game.state.highest));
     updatePower();
@@ -355,7 +362,7 @@ const UI = (function () {
   function updateIncome() {
     if (!Game.state) return;
     const rate = Game.goldRate(Game.state.highest);
-    setText(els.income, '+' + fmt(Math.floor(rate)) + ' /초');
+    setText(els.income, Game.growthStatus().remaining > 0 ? '+' + fmt(Math.floor(rate)) + ' /초' : '오늘 성장 획득 완료');
   }
 
   function updatePity() {
@@ -823,6 +830,7 @@ const UI = (function () {
     opts = opts || {};
     closeModal();
     modalOnClose = opts.onClose || null;
+    modalDismissible = !opts.sticky;
     const back = document.createElement('div');
     back.className = 'modal-backdrop';
     back.innerHTML = '<div class="modal">' + html + '</div>';
@@ -844,6 +852,7 @@ const UI = (function () {
     els.modalRoot.innerHTML = '';
     const callback = modalOnClose;
     modalOnClose = null;
+    modalDismissible = true;
     if (callback) callback();
   }
 
@@ -863,6 +872,7 @@ const UI = (function () {
       '<div><span>이번 도전 성장 미소</span><b>+' + fmt(run.growth) + '</b><small>영웅 육성 지갑에 보관</small></div>' +
       '<div><span>' + (success ? '확정 보상 미소' : '잃은 금고 포인트') + '</span><b>' + fmt(success ? run.amount : run.lost) + (success ? ' 미소' : ' P') + '</b><small>' + (success ? (run.amount > 0 ? '미청구 시 ' + formatKST(run.endedAt + Challenge.CLAIM_TTL) + ' 만료' : '이번 도전의 청구 보상은 없습니다') : '성장 미소와 영웅은 유지됩니다') + '</small></div></div>' +
       '<p class="info-note">보상 기준일: ' + run.date + ' · 누적 ' + fmt(total) + ' / 20,000미소<br>완료한 스테이지: ' + run.cleared + ' · 오늘 남은 도전: ' + Game.checkDailyPlays().available + '/2</p>' +
+      (success && run.amount > 0 ? '<p class="classtalk-required"><b>인증서를 선생님 클래스톡으로 보내야 효력이 발생합니다.</b><br>복사·저장만으로는 제출되지 않습니다. 72시간 안에 보내주세요.</p>' : '') +
       '<div class="btn-row"><button class="btn-primary" id="result-certificate">청구 보상 확인</button><button class="btn-ghost" data-close>닫기</button></div>');
     m.querySelector('#result-certificate').addEventListener('click', function () { openTeacherCertificate(run.date); });
   }
@@ -871,6 +881,17 @@ const UI = (function () {
       '<p class="info-note">기록이 겹치지 않도록 이 탭을 멈췄습니다. 다른 게임 탭을 닫은 뒤 여기서 이어서 진행하세요.</p>' +
       '<button class="btn-primary" id="resume-this-tab">이 탭에서 이어서 진행</button>', {sticky: true});
     m.querySelector('#resume-this-tab').addEventListener('click', function () { closeModal(); Game.reloadFromAuth(); });
+  }
+  function openBalanceAdjustment(info, onConfirm) {
+    const before = Number(info.before).toLocaleString('ko-KR');
+    const after = Number(info.after).toLocaleString('ko-KR');
+    const m = modal('<div class="modal-head"><div><p class="eyebrow">성장 미소 기준 변경</p><h2>기존 미소 보정 안내</h2></div></div>' +
+      '<p class="info-note">' + (info.before > info.after ? '이전 버전에서 한도 없이 쌓인 성장 미소를 새 기준에 맞춰 보정했습니다.' : '보유 금액은 그대로 유지됩니다. 성장 미소의 하루 획득 한도가 적용됩니다.') + '</p>' +
+      '<div class="adjustment-amounts"><div><span>보정 전 보유 성장 미소</span><b id="adjustment-before">' + before + '</b></div><div><span>보정 후 보유 성장 미소</span><b id="adjustment-after">' + after + '</b></div></div>' +
+      '<p class="info-note">영웅·레벨·각성·조각·최고 스테이지·성장 기록은 유지했습니다.<br>보정 전 원본 기록도 이 브라우저에 백업했습니다.</p>' +
+      '<p class="info-note">성장 미소는 처치·클리어·임무·자동 수익·휴식 보상을 모두 합쳐 하루 최대 20,000까지만 얻을 수 있습니다.<br>미소를 사용해도 오늘의 획득 한도는 늘어나지 않습니다.<br>적용일에는 보정 후 금액을 오늘 획득 집계의 시작값으로 반영하며, 한국 시간 자정에 새 한도가 시작됩니다.<br>선생님께 청구할 보상은 별도로 계산합니다.</p>' +
+      '<button class="btn-primary" id="acknowledge-adjustment">확인하고 계속하기</button>', {sticky: true});
+    m.querySelector('#acknowledge-adjustment').addEventListener('click', onConfirm);
   }
   function openTeacherCertificate(date) {
     date = /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? date : Game.today();
@@ -883,44 +904,58 @@ const UI = (function () {
     const ids = pending.map(function (r) { return r.id; });
     const deadline = pending.length ? Math.min.apply(null, pending.map(function (r) { return r.t + Challenge.CLAIM_TTL; })) : null;
     const recordRows = rows.map(function (r) {
-      const status = r.expiredAmount ? '미청구 만료 · 0미소' : (r.outcome === 'failed' ? '도전 실패 · 0미소' : (r.claimedAt ? '청구 완료' : (r.amount > 0 ? '미청구 · ' + formatKST(r.t + Challenge.CLAIM_TTL) + ' 만료' : '획득 보상 없음 · 0미소')));
+      let status = '획득 보상 없음 · 0미소';
+      if (r.expiredAmount) status = '클래스톡 미제출 만료 · 0미소';
+      else if (r.outcome === 'failed') status = '도전 실패 · 0미소';
+      else if (r.claimedAt) status = r.submissionChannel === 'classtalk' ? '클래스톡 제출 기록 · 선생님 수신 기준' : '기존 청구 기록 · 클래스톡 수신 여부 확인';
+      else if (r.amount > 0) status = (r.copiedAt ? '복사됨 · 클래스톡 제출 전 · ' : '클래스톡 미제출 · ') + formatKST(r.t + Challenge.CLAIM_TTL) + ' 만료';
       return '<li><span>' + escapeHTML(r.id) + '</span><b>' + fmt(r.amount) + '미소</b><small>' + status + '</small></li>';
     }).join('') || '<li>이 날짜에 확정된 보상이 없습니다.</li>';
-    const copyText = '📜 루멘티아 미소 보상 청구서\n파수꾼: ' + keeper + '\n보상 기준일: ' + date + ' (한국 시간)\n이번 청구 미소: ' + fmt(pendingTotal) +
-      '\n해당 날짜 누적 보상: ' + fmt(total) + ' / 20,000미소\n이미 청구한 미소: ' + fmt(already) +
-      '\n정산 번호: ' + ids.join(', ') + '\n※ 같은 정산 번호는 중복 지급하지 마세요. 누적액을 다시 지급하는 청구서가 아닙니다.\nhttps://lumentia.vercel.app';
+    const copyText = '📜 루멘티아 미소 수령 인증서 · 선생님 클래스톡 제출용\n\n※ 선생님 클래스톡으로 보내야 효력이 발생합니다. 복사·저장만으로는 제출되지 않습니다.\n\n파수꾼: ' + keeper + '\n보상 기준일: ' + date + ' (한국 시간)\n이번 제출 미소: ' + fmt(pendingTotal) +
+      '\n해당 날짜 누적 보상: ' + fmt(total) + ' / 20,000미소\n이미 제출 기록된 미소: ' + fmt(already) +
+      '\n정산 번호: ' + ids.join(', ') + '\n※ 선생님은 클래스톡 수신 내역과 정산 번호를 확인해 주세요. 같은 번호는 중복 지급하지 마세요.\nhttps://lumentia.vercel.app';
     const m = modal('<div class="cert-modal"><div class="cert-card">' +
-      '<div class="cert-header"><p class="cert-subtitle">LUMENTIA REWARD VOUCHER</p><h2 class="cert-title">미소 보상 청구서</h2></div>' +
+      '<div class="cert-header"><p class="cert-subtitle">선생님 클래스톡 제출용</p><h2 class="cert-title">미소 수령 인증서</h2></div>' +
+      '<div class="classtalk-required" role="note"><b>선생님 클래스톡으로 보내야 효력이 발생합니다.</b><p>인증서를 복사하거나 캡처한 뒤, 선생님 클래스톡에 직접 보내주세요. 복사·저장만으로는 제출되지 않습니다.</p></div>' +
       '<div class="cert-body"><div class="cert-to">수신: <b>선생님 귀하</b></div><p class="cert-desc">' + escapeHTML(keeper) + ' · 보상 기준일 ' + date + ' (한국 시간)<br>수령이 끝난 도전의 확정 보상만 표시합니다.</p>' +
       '<div class="cert-grid"><div class="cert-stat-box highlight"><span class="stat-label">해당 날짜 누적 보상 미소</span><b class="stat-val gold" id="cert-daily-total">' + fmt(total) + ' 미소</b><small>하루 합계 최대 20,000미소</small></div>' +
-      '<div class="cert-stat-box"><span class="stat-label">이번에 청구할 미소</span><b class="stat-val" id="cert-pending-total">' + fmt(pendingTotal) + ' 미소</b><small>아래 미청구 정산 건의 합계</small></div>' +
-      '<div class="cert-stat-box"><span class="stat-label">이미 청구한 미소</span><b class="stat-val">' + fmt(already) + ' 미소</b></div>' +
-      '<div class="cert-stat-box"><span class="stat-label">미청구 보상 만료</span><b class="cert-deadline">' + (deadline ? formatKST(deadline) + '부터' : '미청구 보상 없음') + '</b><small>수령 확정 후 72시간</small></div></div>' +
+      '<div class="cert-stat-box"><span class="stat-label">클래스톡에 제출할 미소</span><b class="stat-val" id="cert-pending-total">' + fmt(pendingTotal) + ' 미소</b><small>아래 미제출 정산 건의 합계</small></div>' +
+      '<div class="cert-stat-box"><span class="stat-label">제출 기록된 미소</span><b class="stat-val">' + fmt(already) + ' 미소</b></div>' +
+      '<div class="cert-stat-box"><span class="stat-label">미제출 보상 만료</span><b class="cert-deadline">' + (deadline ? formatKST(deadline) + '부터' : '미제출 보상 없음') + '</b><small>수령 확정 후 72시간</small></div></div>' +
       '<ul class="settlement-list">' + recordRows + '</ul>' +
-      '<p class="info-note">성장 미소는 영웅 육성용 지갑에 따로 보관됩니다.<br>청구서 복사 시 청구 완료로 기록합니다. 복사한 청구서를 선생님께 제출하세요.<br>같은 정산 번호는 한 번만 지급하며, 미청구 보상은 72시간 뒤 0미소가 됩니다.</p></div></div>' +
-      '<div class="cert-actions"><button class="btn-primary cert-copy-btn" id="btn-cert-copy" ' + (pendingTotal ? '' : 'disabled') + '>청구서 복사 · 청구 완료로 기록</button>' +
+      '<p class="info-note">① 인증서 복사 또는 화면 캡처 → ② 선생님 클래스톡으로 전송 → ③ 아래에 제출 기록<br>72시간 안에 클래스톡으로 보내지 않으면 보상이 만료됩니다.<br>제출 기록 버튼은 자동 전송이나 선생님의 수신 확인을 대신하지 않습니다. 실제 효력은 선생님 클래스톡 수신 내역을 기준으로 합니다.</p></div></div>' +
+      '<div class="cert-actions"><button class="btn-primary cert-copy-btn" id="btn-cert-copy" ' + (pendingTotal ? '' : 'disabled') + '>1. 클래스톡에 보낼 인증서 복사</button>' +
+      '<button class="btn-line" id="btn-record-classtalk" ' + (pendingTotal ? '' : 'disabled') + '>2. 클래스톡으로 보냈어요 · 제출 기록</button>' +
       '<div class="cert-sub-actions"><button class="btn-ghost" id="btn-open-log-from-cert">날짜별 보상 기록</button><button class="btn-ghost" data-close>닫기</button></div></div></div>');
     const copy = m.querySelector('#btn-cert-copy');
     copy.dataset.copyText = copyText;
+    function recordCopy() {
+      const ok = Game.recordCertificateCopy(date, ids);
+      openTeacherCertificate(date);
+      toast(ok ? '복사했습니다. 아직 제출 전입니다! 선생님 클래스톡으로 보내주세요.' : '보상 상태가 바뀌었습니다. 금액을 다시 확인하세요.');
+    }
     copy.addEventListener('click', async function () {
       copy.disabled = true;
       const fresh = Game.teacherLog(date).filter(function (r) { return ids.indexOf(r.id) >= 0 && r.amount > 0 && !r.claimedAt; });
       if (fresh.length !== pending.length) { openTeacherCertificate(date); toast('보상 상태가 바뀌었습니다. 최신 금액을 확인하세요.'); return; }
-      let copied = false;
-      try { await navigator.clipboard.writeText(copyText); copied = true; }
+      try { await navigator.clipboard.writeText(copyText); recordCopy(); }
       catch (e) {
-        const fallback = modal('<div class="modal-head"><h2>청구서를 직접 복사해 주세요</h2></div>' +
-          '<p class="info-note">아래 내용을 길게 눌러 복사한 뒤 완료 버튼을 눌러주세요.</p><textarea class="claim-copy-text" readonly>' + escapeHTML(copyText) + '</textarea>' +
-          '<div class="btn-row"><button class="btn-primary" id="manual-claim-complete">복사 완료 · 청구 기록</button><button class="btn-ghost" data-close>취소</button></div>');
-        fallback.querySelector('#manual-claim-complete').addEventListener('click', function () {
-          const ok = Game.claimTeacherReward(date, ids);
-          openTeacherCertificate(date);
-          toast(ok ? '청구 완료로 기록했습니다. 선생님께 제출하세요.' : '보상 상태가 바뀌었습니다. 금액을 다시 확인하세요.');
-        });
-        return;
+        const fallback = modal('<div class="modal-head"><h2>인증서를 직접 복사해 주세요</h2></div>' +
+          '<p class="info-note">아래 내용을 복사한 뒤 선생님 클래스톡으로 직접 보내야 효력이 발생합니다.</p><textarea class="claim-copy-text" readonly>' + escapeHTML(copyText) + '</textarea>' +
+          '<div class="btn-row"><button class="btn-primary" id="manual-copy-complete">복사를 마쳤어요</button><button class="btn-ghost" data-close>취소</button></div>');
+        fallback.querySelector('#manual-copy-complete').addEventListener('click', recordCopy);
       }
-      if (copied && Game.claimTeacherReward(date, ids)) { openTeacherCertificate(date); toast('청구 완료로 기록했습니다. 복사한 청구서를 선생님께 제출하세요.', 'gold'); }
-      else { copy.disabled = false; toast('청구 완료로 기록하지 못했습니다. 다시 시도하세요.', 'bad'); }
+    });
+    m.querySelector('#btn-record-classtalk').addEventListener('click', function () {
+      const confirmation = modal('<div class="modal-head"><h2>선생님 클래스톡으로 보냈나요?</h2></div>' +
+        '<p class="info-note">실제로 인증서를 클래스톡으로 전송한 경우에만 제출 기록을 남겨주세요.<br>이 버튼은 메시지를 보내지 않으며, 선생님께 도착한 인증서에만 효력이 있습니다.</p>' +
+        '<div class="btn-row"><button class="btn-primary" id="confirm-classtalk-submission">보냈어요 · 제출 기록하기</button><button class="btn-ghost" id="cancel-classtalk-submission">아직 보내지 않았어요</button></div>');
+      confirmation.querySelector('#cancel-classtalk-submission').addEventListener('click', function () { openTeacherCertificate(date); });
+      confirmation.querySelector('#confirm-classtalk-submission').addEventListener('click', function () {
+        const ok = Game.recordClassTalkSubmission(date, ids);
+        openTeacherCertificate(date);
+        toast(ok ? '제출했다고 기록했습니다. 선생님 클래스톡 수신 내역이 효력의 기준입니다.' : '만료되었거나 상태가 바뀌었습니다. 금액을 다시 확인하세요.');
+      });
     });
     m.querySelector('#btn-open-log-from-cert').addEventListener('click', openTeacherLog);
   }
@@ -939,12 +974,12 @@ const UI = (function () {
   function openGuide() {
     modal('<div class="modal-head"><h2>별빛 도전 안내</h2><button class="modal-x" data-close aria-label="닫기">×</button></div>' +
       '<div class="guide-list"><p class="info-note">① 하루 2회, 시작할 때 1회 사용합니다. 매 도전은 스테이지 1부터 시작합니다.<br>' +
-      '② 성장 미소는 영웅 육성용입니다. 처치·임무·방치 보상은 청구 보상에 포함되지 않습니다.<br>' +
+      '② 성장 미소는 영웅 육성용이며 모든 경로를 합쳐 하루 최대 20,000미소까지만 획득합니다. 사용해도 오늘 획득 한도는 늘어나지 않습니다. 청구 보상과 별도입니다.<br>' +
       '③ 스테이지를 밝히면 금고 포인트가 쌓입니다. 멈추고 수령하면 보상 미소로 확정되고 도전이 끝납니다.<br>' +
       '④ 패배·75초 시간 초과 시 금고를 잃고 종료합니다. 성장 미소와 영웅 기록은 유지됩니다.<br>' +
       '⑤ 하루 청구 보상은 두 도전 합산 최대 20,000미소입니다. 남은 한도에 도달하면 자동 수령합니다.<br>' +
       '⑥ 오늘 보상 합계 5,000미소를 초과하는 구간은 매우 어렵습니다. 위험할 때 금고를 수령하세요.<br>' +
-      '⑦ 확정 보상은 72시간 안에 인증서를 복사해 청구하세요. 미청구 보상은 0미소로 만료됩니다.<br>' +
+      '⑦ 인증서는 선생님 클래스톡으로 보내야 효력이 발생합니다. 복사·저장만으로는 제출되지 않으며, 72시간 내 미제출 보상은 0미소로 만료됩니다.<br>' +
       '⑧ 날짜는 한국 시간 기준입니다. 자정을 넘긴 도전은 시작 날짜의 보상으로 정산됩니다.</p></div>' +
       '<button class="btn-primary" data-close>확인</button>');
   }
@@ -1002,6 +1037,7 @@ const UI = (function () {
         '<div><b>게임 안내</b><p>별길, 성장, 소환 방법을 확인합니다.</p></div>' +
         '<button class="btn-ghost" id="open-guide" style="width:auto;height:32px;padding:0 12px;font-size:10.5px">열기</button>' +
       '</div>' +
+      (Game.state.balanceAdjustment ? '<div class="setting-row"><div><b>성장 미소 보정 내역</b><p>기존 금액과 보정 후 금액을 확인합니다.</p></div><button class="btn-ghost" id="open-adjustment">내역 보기</button></div>' : '') +
       '<div class="info-note">루멘티아 : 별의 파수꾼<br>' +
         '성장 미소는 육성 전용입니다. 청구 보상은 하루 2회 합산 최대 20,000미소이며, 미청구 시 72시간 후 만료됩니다.<br>' +
         '이 게임의 세계관, 캐릭터, 이름, 일러스트, 음향은 모두 창작된 오리지널 요소이며, 특정 작품의 코드 · 이미지 · 캐릭터를 사용하지 않았습니다.<br><br>' +
@@ -1031,6 +1067,8 @@ const UI = (function () {
     });
     m.querySelector('#open-report').addEventListener('click', openTeacherLog);
     m.querySelector('#open-guide').addEventListener('click', openGuide);
+    const adjustmentButton = m.querySelector('#open-adjustment');
+    if (adjustmentButton) adjustmentButton.addEventListener('click', function () { openBalanceAdjustment(Game.state.balanceAdjustment, closeModal); });
     m.querySelector('#btn-reset').addEventListener('click', openReset);
 
     const copyBtn = m.querySelector('#btn-copy-transfer');
@@ -1082,6 +1120,7 @@ const UI = (function () {
   }
 
   function openOffline(info) {
+    const eligible = Math.min(info.gold, Game.growthStatus().remaining);
     const m = modal(
       '<div class="offline-art">' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
@@ -1090,17 +1129,17 @@ const UI = (function () {
       '</div>' +
       '<h2 style="text-align:center;font-size:20px;font-weight:800">수호단의 기록</h2>' +
       '<p class="offline-time">' + fmtDuration(info.seconds) + ' 동안 성장 미소가 쌓였습니다</p>' +
-      '<div class="offline-reward"><span>획득 성장 미소</span><b><i class="ico ico-gold"></i>' + fmt(info.gold) + '</b></div>' +
-      '<p class="offline-cap">영웅 육성 전용 · 청구 보상에는 포함되지 않습니다</p>' +
+      '<div class="offline-reward"><span>최대 획득 가능 성장 미소</span><b><i class="ico ico-gold"></i>' + fmt(eligible) + '</b></div>' +
+      '<p class="offline-cap">하루 남은 획득 한도 안에서 지급 · 청구 보상과 별도</p>' +
       '<button class="btn-primary" id="claim-offline">보상 받기</button>',
       { sticky: true }
     );
     m.querySelector('#claim-offline').addEventListener('click', function () {
-      Game.claimOffline(info);
+      const result = Game.claimOffline(info);
       SFX.play('coin');
       closeModal();
       refreshAll();
-      toast('미소 +' + fmt(info.gold), 'gold');
+      toast('성장 미소 +' + fmt(result.gold), 'gold');
     });
   }
 
@@ -1296,7 +1335,7 @@ const UI = (function () {
     const m = modal('<div class="welcome"><p class="eyebrow">처음이라도 괜찮아요</p><h2>동행과 함께 별길을 걸어요</h2>' +
       '<div class="welcome-steps"><div><b>1 · 동행 만나고 키우기</b><p>무료 소환으로 동행을 만나고, 성장 미소로 레벨을 올려요.</p></div>' +
       '<div><b>2 · 도전하고 금고 수령하기</b><p>전투는 자동이에요. 포인트가 쌓이면 멈추고 수령하세요. 하루 두 번 도전할 수 있어요.</p></div>' +
-      '<div><b>3 · 선생님께 보상 청구하기</b><p>청구서를 복사해 제출하세요. 72시간 안에 청구하지 않으면 보상이 사라져요.</p></div></div>' +
+      '<div><b>3 · 선생님께 보상 청구하기</b><p>인증서를 선생님 클래스톡으로 보내야 효력이 생겨요. 복사만으로는 제출되지 않으며, 72시간 안에 보내야 해요.</p></div></div>' +
       '<p class="info-note">화면 위 안내 버튼이 다음 행동을 알려줘요.<br>오늘 보상 합계 5,000미소 초과는 극한 도전이에요. 안전하게 수령하는 것도 좋은 선택이에요!</p>' +
       '<button class="btn-primary" id="welcome-start">무료 동행부터 만나볼래요</button></div>', {sticky:true});
     m.querySelector('#welcome-start').addEventListener('click', function () { SFX.init(); closeModal(); Game.startJourney(); showTab('summon'); });
@@ -1373,6 +1412,7 @@ const UI = (function () {
     openTeacherCertificate: openTeacherCertificate,
     openChallengeResult: openChallengeResult,
     openSyncNotice: openSyncNotice,
+    openBalanceAdjustment: openBalanceAdjustment,
     renderChallengePot: renderChallengePot,
     updateDailyBadge: updateDailyBadge,
     openDailyLimitModal: openDailyLimitModal,

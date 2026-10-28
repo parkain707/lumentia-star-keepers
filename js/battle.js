@@ -435,7 +435,7 @@ const Battle = (function () {
     burst(e.x, e.y, e.color, 16);
     burst(e.x, e.y, '#ffd479', 8);
     const gold = Game.rewardKill(stage, e.isBoss);
-    addFloater(e.x, e.y - 55, '+' + fmt(gold), '#ffd479', 19);
+    if (gold > 0) addFloater(e.x, e.y - 55, '+' + fmt(gold), '#ffd479', 19);
     addUlt(2.2);
     if (e.isBoss) {
       shake = 5;

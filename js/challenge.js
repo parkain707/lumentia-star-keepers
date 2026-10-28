@@ -24,7 +24,7 @@ const Challenge = (function () {
         if (!r || typeof r.id !== 'string' || seen.has(r.id)) return;
         seen.add(r.id);
         const amount = Math.min(DAILY_LIMIT - total, integer(r.amount, DAILY_LIMIT));
-        const record = {id: r.id.slice(0, 100), amount: amount, stage: integer(r.stage), t: integer(r.t), claimedAt: integer(r.claimedAt), expiredAmount: integer(r.expiredAmount, DAILY_LIMIT), outcome: r.outcome === 'failed' ? 'failed' : 'cashed_out'};
+        const record = {id: r.id.slice(0, 100), amount: amount, stage: integer(r.stage), t: integer(r.t), claimedAt: integer(r.claimedAt), copiedAt: integer(r.copiedAt), submissionChannel: r.submissionChannel === 'classtalk' ? 'classtalk' : '', expiredAmount: integer(r.expiredAmount, DAILY_LIMIT), outcome: r.outcome === 'failed' ? 'failed' : 'cashed_out'};
         if (record.outcome === 'failed') record.amount = 0;
         total += record.amount;
         records.push(record);
@@ -57,7 +57,7 @@ const Challenge = (function () {
       confirmed = Math.min(DAILY_LIMIT, Math.max(confirmed, cashouts, integer(legacyReward, DAILY_LIMIT)));
       d.opening = confirmed;
       if (confirmed > 0) {
-        d.records.push({id: 'legacy-' + today, amount: confirmed, stage: state.highest, t: Date.now(), claimedAt: 0, expiredAmount: 0, outcome: 'cashed_out'});
+        d.records.push({id: 'legacy-' + today, amount: confirmed, stage: state.highest, t: Date.now(), claimedAt: 0, copiedAt: 0, submissionChannel: '', expiredAmount: 0, outcome: 'cashed_out'});
         d.opening = 0;
       }
       d.used = Math.max(integer(legacyUsed, 2), data.dailyPlays && data.dailyPlays.date === today ? integer(data.dailyPlays.count, 2) : 0);
@@ -105,7 +105,7 @@ const Challenge = (function () {
     if (d.records.some(function (record) { return record.id === r.id; })) return {ok: false, amount: 0, lost: 0};
     const amount = outcome === 'cashed_out' ? Math.min(r.pot, DAILY_LIMIT - allocated(state, r.date)) : 0;
     const lost = outcome === 'failed' ? r.pot : 0;
-    d.records.push({id: r.id, amount: amount, stage: r.cleared, t: Date.now(), claimedAt: 0, expiredAmount: 0, outcome: outcome});
+    d.records.push({id: r.id, amount: amount, stage: r.cleared, t: Date.now(), claimedAt: 0, copiedAt: 0, submissionChannel: '', expiredAmount: 0, outcome: outcome});
     r.status = outcome; r.amount = amount; r.lost = lost; r.pot = 0; r.endedAt = Date.now(); r.snapshot = null;
     return {ok: true, amount: amount, lost: lost, run: r};
   }

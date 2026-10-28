@@ -14,6 +14,10 @@ http.createServer((req,res)=>{
     res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});
     res.end(require('./review-fixtures.cjs').newStudent()); return;
   }
+  if (pathname === '/__review/classtalk') {
+    res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});
+    res.end(require('./review-fixtures.cjs').classTalk()); return;
+  }
   const target = path.resolve(root, '.' + (pathname === '/' ? '/index.html' : pathname));
   const rel = path.relative(root, target);
   if (rel.startsWith('..') || path.isAbsolute(rel) || rel.split(path.sep).some(p=>p.startsWith('.'))) {res.writeHead(403);res.end();return;}

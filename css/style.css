@@ -2762,6 +2762,14 @@ p, h1, h2, h3 { margin: 0; }
 [hidden] { display: none !important; }
 .currency-label { font-size: 10px; color: #c6d4eb; }
 .currency-label { white-space: nowrap; }
+.growth-income-bar { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 3px 10px; margin: 2px 14px; padding: 5px 10px; border: 1px solid rgba(143,220,255,.16); border-radius: 8px; font-size: 11px; color: #bdcce2; }
+.growth-income-bar b { color: #a8ecda; }
+.growth-income-bar small { margin-left: auto; font-size: 10px; }
+.adjustment-amounts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
+.adjustment-amounts div { padding: 16px 12px; border: 1px solid rgba(143,220,255,.3); border-radius: 12px; background: rgba(143,220,255,.07); }
+.adjustment-amounts span { display: block; font-size: 12px; line-height: 1.6; color: #bdcce2; }
+.adjustment-amounts b { display: block; margin-top: 6px; color: #ffe4a3; font-size: 25px; }
+@media (max-width: 600px) { .growth-income-bar { margin-left: 10px; margin-right: 10px; } .growth-income-bar small { width: 100%; margin-left: 0; } .adjustment-amounts { grid-template-columns: 1fr; gap: 8px; } }
 .challenge-summary { flex: 0 0 auto; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 12px; padding: 8px 12px; margin: 2px 14px 4px; background: rgba(16,25,47,.86); border: 1px solid rgba(143,220,255,.23); border-radius: 10px; }
 .challenge-summary > div { display: flex; flex-direction: column; gap: 2px; }
 .challenge-summary > div > span { font-size: 11px; color: #b9cbe5; }
@@ -2782,6 +2790,9 @@ p, h1, h2, h3 { margin: 0; }
 .reward-day small { width: 100%; text-align: left; color: #b5c7dd; }
 .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
 .cert-copy-btn { white-space: normal; }
+.classtalk-required { margin: 14px 0; padding: 14px; border: 1px solid #ffd479; border-radius: 10px; background: rgba(255,212,121,.12); }
+.classtalk-required b { color: #ffe4a3; font-size: 14px; line-height: 1.6; }
+.classtalk-required p { margin-top: 5px; color: #e0e9f6; font-size: 12px; line-height: 1.7; }
 .claim-copy-text { width: 100%; min-height: 240px; padding: 12px; border: 1px solid #60718e; border-radius: 10px; color: #edf3ff; background: #10172c; font: 13px/1.7 sans-serif; resize: vertical; }
 .nav { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 @media (max-width: 420px) { .challenge-summary { margin-left: 8px; margin-right: 8px; } .cert-grid { grid-template-columns: 1fr; } .cert-title { font-size: 20px; } }

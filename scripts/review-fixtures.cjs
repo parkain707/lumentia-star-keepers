@@ -26,3 +26,15 @@ exports.newStudent = function () {
     const name='학생연습'+Date.now().toString().slice(-5);await Auth.register(name,'local-review-only');location.replace('/');
   };</script></html>`;
 };
+exports.classTalk = function () {
+  return `<!doctype html><html lang="ko"><meta charset="utf-8"><title>클래스톡 제출 안내 검증</title>
+  <style>body{font:18px sans-serif;background:#10172c;color:#edf3ff;max-width:700px;margin:60px auto;padding:20px;line-height:1.8}button{font:inherit;padding:12px 24px;background:#ffe09b;border:0;border-radius:8px}</style>
+  <h1>클래스톡 제출 안내 검증</h1><p>가상 확정 보상 1,200미소로 인증서 복사와 제출 기록을 구분해 확인합니다. 실제 선생님께 전송하지 않습니다.</p><button id="seed-classtalk">가상 인증서 검증 시작</button>
+  <script src="/js/auth.js"></script><script>document.getElementById('seed-classtalk').onclick=async function(){
+    const name='클래스톡검증'+Date.now().toString().slice(-4);await Auth.register(name,'local-review-only');
+    const date=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+    const state={v:2,gold:300,gems:1200,highest:2,owned:['lumen','mirea','pio'],party:['lumen','mirea','pio'],heroes:{lumen:{lv:2,star:1,shards:0},mirea:{lv:2,star:1,shards:0},pio:{lv:2,star:1,shards:0}},tutorial:true,sfx:false,freeTen:false,onboarding:{grown:true},growthPolicyVersion:1,growthDaily:{date:date,earned:300,fraction:0,sources:{initial:300}},rewardDays:{},lastSeen:Date.now()};
+    state.rewardDays[date]={used:1,opening:0,records:[{id:'REVIEW-CLASSTALK-ONLY',amount:1200,stage:2,t:Date.now(),claimedAt:0,copiedAt:0,submissionChannel:'',expiredAmount:0,outcome:'cashed_out'}]};
+    localStorage.setItem(Auth.getSaveKeyForUser(name),JSON.stringify(state));location.replace('/');
+  };</script></html>`;
+};

@@ -31,6 +31,9 @@ var Game = (function () {
     return {
       v: 2,
       gold: START_GOLD,
+      growthPolicyVersion: Growth.POLICY,
+      growthDaily: {date: getTodayStr(), earned: START_GOLD, fraction: 0, sources: {initial: START_GOLD}},
+      balanceAdjustment: null,
       gems: START_GEMS,
       highest: 0,
       owned: DEFAULT_PARTY.slice(),
@@ -148,6 +151,7 @@ var Game = (function () {
     }
 
     Challenge.migrate(data, s, getDeviceDailyUsed(getTodayStr()), getLegacyDailyReward(getTodayStr()));
+    Growth.migrate(data, s);
     Challenge.expire(s);
     if (data.v !== 2) {
       // Keep the exact original save before making the one-time balance correction.
@@ -155,6 +159,12 @@ var Game = (function () {
         const backupKey = key + '.before-v2';
         if (!localStorage.getItem(backupKey)) localStorage.setItem(backupKey, raw);
       } catch (e) { throw new Error('기존 기록을 백업할 공간이 부족합니다. 저장 공간을 확보해 주세요.'); }
+    }
+    if (data.growthPolicyVersion !== Growth.POLICY) {
+      try {
+        const growthBackup = key + '.before-growth-cap-v1';
+        if (!localStorage.getItem(growthBackup)) localStorage.setItem(growthBackup, raw);
+      } catch (e) { throw new Error('보정 전 기록을 백업하지 못했습니다. 저장 공간을 확보해 주세요.'); }
     }
     return s;
   }
@@ -195,6 +205,8 @@ var Game = (function () {
   }
 
   function currentStage() { return state && state.run ? state.run.stage : 1; }
+  function growthStatus() { return Growth.status(state); }
+  function creditGrowth(amount, source) { return Growth.credit(state, amount, source); }
 
   function smileCap(raw) {
     return Math.max(0, Math.min(BALANCE.maxReward, Math.round(num(raw, 0))));
@@ -558,8 +570,7 @@ var Game = (function () {
 
   function rewardKill(stage, isBoss) {
     if (!state || !state.run || state.run.status !== 'active') return 0;
-    const gold = smileCap(BALANCE.killGold * Math.pow(BALANCE.goldGrowth, Math.max(0, stage - 1)) * (isBoss ? BALANCE.bossGoldMult : 1));
-    state.gold += gold; state.stats.totalGold += gold; state.run.growth += gold;
+    const gold = creditGrowth(smileCap(BALANCE.killGold * Math.pow(BALANCE.goldGrowth, Math.max(0, stage - 1)) * (isBoss ? BALANCE.bossGoldMult : 1)), 'kill');
     save();
     return gold;
   }
@@ -585,9 +596,9 @@ var Game = (function () {
         if (id) { const n = 10 + Math.floor(stage / 10) * 2; state.heroes[id].shards += n; shards = {name: HERO_BY_ID[id].name + ' 조각', amount: n}; }
       }
     }
-    state.gold += gold; state.stats.totalGold += gold; run.growth += gold;
+    const credited = creditGrowth(gold, 'stage');
     const points = Challenge.accumulate(state, stage, gold);
-    const result = {gold: gold, points: points, pot: run.pot, gems: gems, shards: shards};
+    const result = {gold: credited, points: points, pot: run.pot, gems: gems, shards: shards};
     partyPower(); save();
     if (window.UI) UI.refreshAll();
     if (run.pot > 0 && run.pot >= 20000 - Challenge.allocated(state, run.date)) cashoutChallengePot();
@@ -665,15 +676,25 @@ var Game = (function () {
     if (changed) save();
     return Challenge.entry(state, date || getTodayStr()).records.map(function (r) { return Object.assign({}, r); });
   }
-  function claimTeacherReward(date, ids) {
+  function recordCertificateCopy(date, ids) {
+    if (!state || !Array.isArray(ids)) return false;
+    const before = JSON.stringify(state);
+    Challenge.expire(state);
+    const eligible = Challenge.entry(state, date).records.filter(function (r) { return ids.indexOf(r.id) >= 0 && r.amount > 0 && !r.claimedAt; });
+    if (!ids.length || eligible.length !== ids.length) return false;
+    eligible.forEach(function (r) { if (!r.copiedAt) r.copiedAt = Date.now(); });
+    if (save()) return true;
+    state = JSON.parse(before); return false;
+  }
+  function recordClassTalkSubmission(date, ids) {
     if (!state || !Array.isArray(ids)) return false;
     const before = JSON.stringify(state);
     Challenge.expire(state);
     const rows = Challenge.entry(state, date).records;
     const eligible = rows.filter(function (r) { return ids.indexOf(r.id) >= 0 && r.amount > 0 && !r.claimedAt; });
     if (!ids.length || eligible.length !== ids.length) return false;
-    // Only records actually included in the copied certificate can be marked claimed.
-    rows.forEach(function (r) { if (ids.indexOf(r.id) >= 0 && r.amount > 0 && !r.claimedAt) r.claimedAt = Date.now(); });
+    // Record only the settlement IDs the student explicitly confirms sending to ClassTalk.
+    rows.forEach(function (r) { if (ids.indexOf(r.id) >= 0 && r.amount > 0 && !r.claimedAt) { r.claimedAt = Date.now(); r.submissionChannel = 'classtalk'; } });
     if (save()) return true;
     state = JSON.parse(before);
     return false;
@@ -733,17 +754,17 @@ var Game = (function () {
     if (!a) return { ok: false };
     if (state.achievements[id]) return { ok: false, reason: '이미 수령한 보상입니다' };
     if (progressOf(a) < a.target) return { ok: false, reason: '아직 달성하지 못했습니다' };
+    if (a.reward.gold && growthStatus().remaining < smileCap(a.reward.gold)) return {ok: false, reason: '오늘 성장 미소 획득 한도가 부족합니다. 이 임무는 내일 수령할 수 있어요.'};
 
     state.achievements[id] = true;
     if (a.reward.gems) state.gems += a.reward.gems;
     let smile = 0;
     if (a.reward.gold) {
-      smile = smileCap(a.reward.gold);
-      state.gold += smile;
+      smile = creditGrowth(smileCap(a.reward.gold), 'mission');
     }
     save();
     if (smile > 0) reportSmile(smile, '임무 보상');
-    return { ok: true, label: a.title, reward: a.reward };
+    return { ok: true, label: a.title, reward: Object.assign({}, a.reward, {gold: smile}) };
   }
 
   /* ---------------- offline / settings ---------------- */
@@ -765,25 +786,24 @@ var Game = (function () {
       }
     }
 
-    state.pending = pending || null;
+    if (pending) pending.gold = Math.min(pending.gold, growthStatus().remaining);
+    state.pending = pending && pending.gold > 0 ? pending : null;
     state.lastSeen = Date.now();
     save();
     return state.pending;
   }
 
   function claimOffline(info) {
-    if (!state) return;
-    const pending = state.pending || info;
-    if (!pending) return;
-    const gold = smileCap(pending.gold);
-    state.gold += gold;
-    state.stats.totalGold += gold;
+    if (!state || !state.pending) return {gold: 0};
+    const before = JSON.stringify(state);
+    const gold = creditGrowth(smileCap(state.pending.gold), 'offline');
     state.pending = null;
     pendingOffline = null;
     partyPower();
-    save();
+    if (!save()) { state = JSON.parse(before); return {gold: 0}; }
     if (gold > 0) reportSmile(gold, '휴식 보상');
     if (window.UI) UI.renderHUD();
+    return {gold: gold};
   }
 
   function startJourney() {
@@ -791,6 +811,28 @@ var Game = (function () {
     state.tutorial = true; save();
     if (window.UI) UI.refreshAll();
     if (pendingOffline) UI.openOffline(pendingOffline);
+  }
+  function acknowledgeBalanceAdjustment() {
+    if (!state.balanceAdjustment || state.balanceAdjustment.acknowledgedAt) return true;
+    state.balanceAdjustment.acknowledgedAt = Date.now();
+    if (!save()) { state.balanceAdjustment.acknowledgedAt = 0; return false; }
+    lastTick = performance.now();
+    return true;
+  }
+  function showArrival() {
+    function next() {
+      if (!state.tutorial) UI.openWelcome();
+      else if (pendingOffline) UI.openOffline(pendingOffline);
+    }
+    if (state.balanceAdjustment && !state.balanceAdjustment.acknowledgedAt) {
+      if (state.run && state.run.status === 'active') { save(); Battle.pause(); }
+      UI.openBalanceAdjustment(state.balanceAdjustment, function () {
+        if (!acknowledgeBalanceAdjustment()) return;
+        UI.closeModal();
+        if (state.run && state.run.status === 'active') Battle.start();
+        next();
+      });
+    } else next();
   }
 
   function setSfx(on) {
@@ -811,13 +853,13 @@ var Game = (function () {
   function startIdle() {
     lastTick = performance.now();
     setInterval(function () {
-      if (!state || staleTab || !state.tutorial || !Auth.getCurrentUser() || document.visibilityState === 'hidden') return;
+      if (!state || staleTab || !state.tutorial || !Auth.getCurrentUser() || document.visibilityState === 'hidden' || (state.balanceAdjustment && !state.balanceAdjustment.acknowledgedAt)) return;
       const now = performance.now();
       let dt = (now - lastTick) / 1000;
       lastTick = now;
       if (dt <= 0) return;
       if (dt > 5) dt = 5;
-      state.gold += goldRate(state.highest) * dt;
+      creditGrowth(goldRate(state.highest) * dt, 'idle');
       if (window.UI && document.visibilityState !== 'hidden') UI.renderHUD();
     }, 500);
   }
@@ -845,7 +887,7 @@ var Game = (function () {
     const hasCashedOut = dates.some(function (date) { return state.rewardDays[date].records.some(function (r) { return r.outcome === 'cashed_out' && (r.amount > 0 || r.expiredAmount > 0); }); });
     if (!active && state.freeTen) return {id:'summon_free', title:'1 / 5 · 동행 만나기', desc:'먼저 무료로 동행 10명을 만나보세요. 도전 횟수는 줄어들지 않아요.', action:'무료 동행 만나기', tab:'summon', target:'free_summon', focus:'btn-free-ten'};
     if (!active && !state.onboarding.grown) return {id:'first_growth', title:'2 / 5 · 동행 키우기', desc:'성장 미소로 동행을 강하게 만들어요. 아래 버튼으로 함께 레벨을 올려보세요.', action:'동행 함께 키우기', tab:'heroes', target:'growth', focus:'btn-bulk-level'};
-    if (!active && pendingDate) return {id:'first_claim', title:'5 / 5 · 보상 청구하기', desc:'안전하게 받은 보상이 있어요! 청구서를 복사해 선생님께 제출하세요. 72시간 안에 청구해야 해요.', action:'청구서 확인', tab:'battle', target:'cert', date:pendingDate, focus:'btn-top-cert'};
+    if (!active && pendingDate) return {id:'first_claim', title:'5 / 5 · 보상 청구하기', desc:'안전하게 받은 보상이 있어요! 인증서를 선생님 클래스톡으로 보내야 효력이 생겨요. 복사만으로는 제출되지 않아요. 72시간 안에 보내주세요.', action:'청구서 확인', tab:'battle', target:'cert', date:pendingDate, focus:'btn-top-cert'};
     if (!active) {
       if (!checkDailyPlays().canPlay) return {id:'daily_done', title:'오늘의 도전 완료', desc:'오늘 두 번의 도전을 마쳤어요. 영웅을 키우고 내일 다시 만나요!', action:'보상 기록 보기', target:'records', tab:'battle'};
       return {id:'challenge_start', title:'3 / 5 · 별길 도전', desc:'이제 도전 시작을 눌러보세요. 동행이 스스로 싸워요. 하루에 두 번 도전할 수 있어요.', action:'도전 시작', tab:'battle', target:'start', focus:'btn-start-challenge'};
@@ -864,8 +906,7 @@ var Game = (function () {
     Battle.syncParty({full: true});
     if (state.run && state.run.status === 'active') Battle.start();
     if (window.UI) { UI.refreshAll(); UI.updateKeeperHUD(); }
-    if (!state.tutorial) UI.openWelcome();
-    else if (pendingOffline) UI.openOffline(pendingOffline);
+    showArrival();
   }
 
   function logout() {
@@ -891,6 +932,8 @@ var Game = (function () {
     get state() { return state; },
     currentStage: currentStage,
     goldRate: goldRate,
+    growthStatus: growthStatus,
+    acknowledgeBalanceAdjustment: acknowledgeBalanceAdjustment,
     partyPower: partyPower,
     getPartyCombat: getPartyCombat,
     heroInfo: heroInfo,
@@ -911,7 +954,8 @@ var Game = (function () {
     setSfx: setSfx,
     getGuideStep: getGuideStep,
     teacherLog: teacherLog,
-    claimTeacherReward: claimTeacherReward,
+    recordCertificateCopy: recordCertificateCopy,
+    recordClassTalkSubmission: recordClassTalkSubmission,
     today: getTodayStr,
     startChallenge: startChallenge,
     reset: reset,
@@ -948,12 +992,7 @@ var Game = (function () {
     } else {
       if (state.run && state.run.status === 'active') Battle.start();
       pendingOffline = computeOffline();
-      if (!state.tutorial) {
-        UI.openWelcome();
-      } else if (pendingOffline) {
-        offlineShown = true;
-        setTimeout(function () { UI.openOffline(pendingOffline); }, 450);
-      }
+      showArrival();
     }
 
     window.addEventListener('storage', function (e) {
