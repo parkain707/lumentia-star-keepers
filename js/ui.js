@@ -893,40 +893,59 @@ const UI = (function () {
       '<button class="btn-primary" id="acknowledge-adjustment">확인하고 계속하기</button>', {sticky: true});
     m.querySelector('#acknowledge-adjustment').addEventListener('click', onConfirm);
   }
-  function openTeacherCertificate(date) {
+  function openTeacherCertificate(date, skipSync) {
     date = /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? date : Game.today();
     const keeper = Game.getKeeperName();
     const rows = Game.teacherLog(date);
-    const total = Game.getDailyRewardClaimed(date);
-    const pending = rows.filter(function (r) { return r.amount > 0 && !r.claimedAt; });
-    const pendingTotal = pending.reduce(function (sum, r) { return sum + r.amount; }, 0);
-    const already = rows.filter(function (r) { return r.claimedAt; }).reduce(function (sum, r) { return sum + r.amount; }, 0);
+    const total = Math.min(20000, rows.reduce(function(sum,r){return sum + (r.ledgerAmount == null ? r.amount + (r.expiredAmount || 0) : r.ledgerAmount);},0));
+    const outstanding = function(r){return r.outstanding == null ? r.amount : r.outstanding;};
+    const pending = rows.filter(function(r){return outstanding(r)>0 && !r.claimedAt && !r.receivedAt && r.ledgerStatus!=='requested';});
+    const pendingTotal = pending.reduce(function(sum,r){return sum+outstanding(r);},0);
+    const unpaidTotal = rows.reduce(function(sum,r){return sum+outstanding(r);},0);
+    const already = rows.reduce(function(sum,r){return sum+(r.paidAmount || 0);},0);
+    const identity = typeof Rewards !== 'undefined' ? Rewards.identity() : null;
+    const connection = typeof Rewards !== 'undefined' ? Rewards.status : {connected:false};
     const ids = pending.map(function (r) { return r.id; });
     const deadline = pending.length ? Math.min.apply(null, pending.map(function (r) { return r.t + Challenge.CLAIM_TTL; })) : null;
     const recordRows = rows.map(function (r) {
       let status = '획득 보상 없음 · 0미소';
-      if (r.expiredAmount) status = '클래스톡 미제출 만료 · 0미소';
+      if (r.ledgerStatus === 'paid') status = '선생님 지급 완료 · 남은 청구 0미소';
+      else if (r.ledgerStatus === 'partial') status = '일부 지급 완료 · 남은 청구 ' + fmt(outstanding(r)) + '미소';
+      else if (r.receivedAt) status = '선생님 클래스톡 수신 확인 · 지급 대기';
+      else if (r.ledgerStatus === 'expired' || r.expiredAmount) status = '클래스톡 미제출 만료 · 0미소';
       else if (r.outcome === 'failed') status = '도전 실패 · 0미소';
-      else if (r.claimedAt) status = r.submissionChannel === 'classtalk' ? '클래스톡 제출 기록 · 선생님 수신 기준' : '기존 청구 기록 · 클래스톡 수신 여부 확인';
+      else if (r.ledgerStatus === 'requested' || r.claimedAt) status = '학생 제출 기록 · 선생님 클래스톡 수신 확인 필요';
       else if (r.amount > 0) status = (r.copiedAt ? '복사됨 · 클래스톡 제출 전 · ' : '클래스톡 미제출 · ') + formatKST(r.t + Challenge.CLAIM_TTL) + ' 만료';
-      return '<li><span>' + escapeHTML(r.id) + '</span><b>' + fmt(r.amount) + '미소</b><small>' + status + '</small></li>';
+      return '<li><span>' + escapeHTML(r.id) + '</span><b>' + fmt(outstanding(r)) + '미소 남음</b><small>' + status + '</small></li>';
     }).join('') || '<li>이 날짜에 확정된 보상이 없습니다.</li>';
     const copyText = '📜 루멘티아 미소 수령 인증서 · 선생님 클래스톡 제출용\n\n※ 선생님 클래스톡으로 보내야 효력이 발생합니다. 복사·저장만으로는 제출되지 않습니다.\n\n파수꾼: ' + keeper + '\n보상 기준일: ' + date + ' (한국 시간)\n이번 제출 미소: ' + fmt(pendingTotal) +
-      '\n해당 날짜 누적 보상: ' + fmt(total) + ' / 20,000미소\n이미 제출 기록된 미소: ' + fmt(already) +
+      '\n학생 번호: ' + (identity ? identity.id.slice(0,8) : '미연결') + '\n해당 날짜 누적 보상: ' + fmt(total) + ' / 20,000미소\n지급 완료 미소: ' + fmt(already) +
       '\n정산 번호: ' + ids.join(', ') + '\n※ 선생님은 클래스톡 수신 내역과 정산 번호를 확인해 주세요. 같은 번호는 중복 지급하지 마세요.\nhttps://lumentia.vercel.app';
     const m = modal('<div class="cert-modal"><div class="cert-card">' +
       '<div class="cert-header"><p class="cert-subtitle">선생님 클래스톡 제출용</p><h2 class="cert-title">미소 수령 인증서</h2></div>' +
       '<div class="classtalk-required" role="note"><b>선생님 클래스톡으로 보내야 효력이 발생합니다.</b><p>인증서를 복사하거나 캡처한 뒤, 선생님 클래스톡에 직접 보내주세요. 복사·저장만으로는 제출되지 않습니다.</p></div>' +
       '<div class="cert-body"><div class="cert-to">수신: <b>선생님 귀하</b></div><p class="cert-desc">' + escapeHTML(keeper) + ' · 보상 기준일 ' + date + ' (한국 시간)<br>수령이 끝난 도전의 확정 보상만 표시합니다.</p>' +
       '<div class="cert-grid"><div class="cert-stat-box highlight"><span class="stat-label">해당 날짜 누적 보상 미소</span><b class="stat-val gold" id="cert-daily-total">' + fmt(total) + ' 미소</b><small>하루 합계 최대 20,000미소</small></div>' +
-      '<div class="cert-stat-box"><span class="stat-label">클래스톡에 제출할 미소</span><b class="stat-val" id="cert-pending-total">' + fmt(pendingTotal) + ' 미소</b><small>아래 미제출 정산 건의 합계</small></div>' +
-      '<div class="cert-stat-box"><span class="stat-label">제출 기록된 미소</span><b class="stat-val">' + fmt(already) + ' 미소</b></div>' +
+      '<div class="cert-stat-box"><span class="stat-label">남은 청구 보상</span><b class="stat-val" id="cert-pending-total">' + fmt(unpaidTotal) + ' 미소</b><small>미제출 + 수신 확인·지급 대기 금액</small></div>' +
+      '<div class="cert-stat-box"><span class="stat-label">선생님 지급 완료</span><b class="stat-val" id="cert-paid-total">' + fmt(already) + ' 미소</b></div>' +
       '<div class="cert-stat-box"><span class="stat-label">미제출 보상 만료</span><b class="cert-deadline">' + (deadline ? formatKST(deadline) + '부터' : '미제출 보상 없음') + '</b><small>수령 확정 후 72시간</small></div></div>' +
+      '<p class="info-note">학생 번호: ' + (identity ? escapeHTML(identity.id.slice(0,8)) : '미연결') + '<br>이번 인증서에 담을 미제출 금액: ' + fmt(pendingTotal) + '미소<br><span class="ledger-connection">' + (connection.connected ? '서버 지급 기록 연결됨 · 선생님 지급 확인 시 잔액에 반영' : '서버 지급 기록을 확인하고 있습니다') + '</span></p>' +
       '<ul class="settlement-list">' + recordRows + '</ul>' +
-      '<p class="info-note">① 인증서 복사 또는 화면 캡처 → ② 선생님 클래스톡으로 전송 → ③ 아래에 제출 기록<br>72시간 안에 클래스톡으로 보내지 않으면 보상이 만료됩니다.<br>제출 기록 버튼은 자동 전송이나 선생님의 수신 확인을 대신하지 않습니다. 실제 효력은 선생님 클래스톡 수신 내역을 기준으로 합니다.</p></div></div>' +
+      '<p class="info-note">① 인증서 복사 또는 화면 캡처 → ② 선생님 클래스톡으로 전송 → ③ 아래에 제출 기록<br>72시간 안에 클래스톡으로 보내지 않으면 보상이 만료됩니다.<br>제출 기록 버튼은 자동 전송이나 선생님의 수신 확인을 대신하지 않습니다. 선생님이 수신 확인한 보상은 지급 대기로 보관되고, 지급 완료 금액만큼 청구 잔액이 차감됩니다. 성장 미소와 영웅 기록은 유지됩니다.</p></div></div>' +
       '<div class="cert-actions"><button class="btn-primary cert-copy-btn" id="btn-cert-copy" ' + (pendingTotal ? '' : 'disabled') + '>1. 클래스톡에 보낼 인증서 복사</button>' +
       '<button class="btn-line" id="btn-record-classtalk" ' + (pendingTotal ? '' : 'disabled') + '>2. 클래스톡으로 보냈어요 · 제출 기록</button>' +
-      '<div class="cert-sub-actions"><button class="btn-ghost" id="btn-open-log-from-cert">날짜별 보상 기록</button><button class="btn-ghost" data-close>닫기</button></div></div></div>');
+      '<div class="cert-sub-actions"><button class="btn-ghost" id="btn-refresh-ledger">지급 내역 새로고침</button><button class="btn-ghost" id="btn-open-log-from-cert">날짜별 보상 기록</button><button class="btn-ghost" data-close>닫기</button></div></div></div>');
+    m.querySelector('.cert-modal').dataset.rewardDate = date;
+    async function refreshLedger() {
+      if (typeof Rewards === 'undefined') return;
+      const result = await Rewards.sync();
+      const visible = document.querySelector('.cert-modal[data-reward-date="' + date + '"]');
+      if (!visible) return;
+      if (!result.ok) { visible.querySelector('.ledger-connection').textContent = '연결 확인 필요 · 이전 지급 기록 표시 중'; toast(result.error || '지급 기록 연결을 확인해 주세요.'); }
+      else if (result.rejected && result.rejected.length) toast('일부 기록은 확인이 필요합니다. 정산 번호를 선생님께 알려주세요.');
+    }
+    m.querySelector('#btn-refresh-ledger').addEventListener('click', async function(){await refreshLedger();});
+    if (!skipSync) refreshLedger();
     const copy = m.querySelector('#btn-cert-copy');
     copy.dataset.copyText = copyText;
     function recordCopy() {
@@ -936,8 +955,9 @@ const UI = (function () {
     }
     copy.addEventListener('click', async function () {
       copy.disabled = true;
-      const fresh = Game.teacherLog(date).filter(function (r) { return ids.indexOf(r.id) >= 0 && r.amount > 0 && !r.claimedAt; });
-      if (fresh.length !== pending.length) { openTeacherCertificate(date); toast('보상 상태가 바뀌었습니다. 최신 금액을 확인하세요.'); return; }
+      if (typeof Rewards !== 'undefined') { const sync = await Rewards.sync(); if (!sync.ok || (sync.rejected && ids.some(function(id){return sync.rejected.indexOf(id)>=0;}))) {copy.disabled=false;toast('지급 기록 연결과 정산 번호를 확인한 뒤 다시 복사해 주세요.');return;} }
+      const fresh = Game.teacherLog(date).filter(function(r){return ids.indexOf(r.id)>=0 && outstanding(r)>0 && !r.claimedAt && !r.receivedAt && r.ledgerStatus!=='requested';});
+      if (fresh.length !== pending.length || fresh.reduce(function(n,r){return n+outstanding(r);},0)!==pendingTotal) { openTeacherCertificate(date); toast('보상 상태가 바뀌었습니다. 최신 금액을 확인하세요.'); return; }
       try { await navigator.clipboard.writeText(copyText); recordCopy(); }
       catch (e) {
         const fallback = modal('<div class="modal-head"><h2>인증서를 직접 복사해 주세요</h2></div>' +
@@ -959,15 +979,19 @@ const UI = (function () {
     });
     m.querySelector('#btn-open-log-from-cert').addEventListener('click', openTeacherLog);
   }
+  window.addEventListener('lumentia-rewards', function(){
+    const visible = document.querySelector('.cert-modal[data-reward-date]');
+    if (visible) openTeacherCertificate(visible.dataset.rewardDate, true);
+  });
   function openTeacherLog() {
     const dates = Object.keys(Game.state.rewardDays).sort().reverse();
     const rows = dates.map(function (date) {
       const list = Game.teacherLog(date);
-      const pending = list.filter(function (r) { return r.amount > 0 && !r.claimedAt; }).reduce(function (sum, r) { return sum + r.amount; }, 0);
+      const pending = list.reduce(function(sum,r){return sum+(r.outstanding == null ? r.amount : r.outstanding);},0);
       return '<button class="reward-day btn-line" data-reward-day="' + date + '"><span>' + date + '</span><b>누적 ' + fmt(Game.getDailyRewardClaimed(date)) + ' / 20,000</b><small>미청구 ' + fmt(pending) + '미소</small></button>';
     }).join('');
     const m = modal('<div class="modal-head"><h2>날짜별 청구 보상</h2><button data-close class="modal-x" aria-label="닫기">×</button></div>' +
-      '<p class="info-note">각 날짜의 도전 2회를 합산합니다. 미청구 보상은 확정 후 72시간이 지나면 0미소가 됩니다.</p>' + rows + '<button class="btn-primary" data-close>닫기</button>');
+      '<p class="info-note">지급 완료 금액은 청구 잔액에서 차감됩니다. 72시간 내 클래스톡 미제출 보상은 만료되고, 선생님이 수신 확인한 보상은 지급 대기로 보관됩니다.</p>' + rows + '<button class="btn-primary" data-close>닫기</button>');
     m.querySelectorAll('[data-reward-day]').forEach(function (button) { button.addEventListener('click', function () { openTeacherCertificate(button.dataset.rewardDay); }); });
   }
 

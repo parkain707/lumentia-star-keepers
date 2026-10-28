@@ -6,6 +6,12 @@ const mime = {'.html':'text/html; charset=utf-8','.js':'text/javascript; charset
 const port = Number(process.env.PORT || 4173);
 http.createServer((req,res)=>{
   const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+  if (pathname === '/api/rewards-review') {
+    let body='';req.on('data',chunk=>body+=chunk);req.on('end',()=>{
+      try {const result=require('./teacher-fixtures.cjs').handle(JSON.parse(body));res.writeHead(result.ok?200:401,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(result));}
+      catch(e){res.writeHead(400);res.end('{}');}
+    });return;
+  }
   if (pathname === '/__review/migration') {
     res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});
     res.end(require('./review-fixtures.cjs').page()); return;
@@ -18,7 +24,8 @@ http.createServer((req,res)=>{
     res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});
     res.end(require('./review-fixtures.cjs').classTalk()); return;
   }
-  const target = path.resolve(root, '.' + (pathname === '/' ? '/index.html' : pathname));
+  if (pathname.startsWith('/server/')) {res.writeHead(404);res.end();return;}
+  const target = path.resolve(root, '.' + (pathname === '/' ? '/index.html' : pathname === '/teacher' || pathname === '/teacher/' ? '/teacher/index.html' : pathname));
   const rel = path.relative(root, target);
   if (rel.startsWith('..') || path.isAbsolute(rel) || rel.split(path.sep).some(p=>p.startsWith('.'))) {res.writeHead(403);res.end();return;}
   fs.readFile(target,(err,bytes)=>{

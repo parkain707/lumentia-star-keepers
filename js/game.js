@@ -666,6 +666,7 @@ var Game = (function () {
     Battle.stop();
     if (!save()) { state = JSON.parse(before); return {ok: false, amount: 0, lost: 0}; }
     if (window.UI) { UI.refreshAll(); UI.openChallengeResult(result.run); }
+    if (typeof Rewards !== 'undefined') Rewards.sync();
     return result;
   }
   function cashoutChallengePot() { return finishChallenge('cashed_out'); }
@@ -674,7 +675,7 @@ var Game = (function () {
     if (!state) return [];
     const changed = Challenge.expire(state);
     if (changed) save();
-    return Challenge.entry(state, date || getTodayStr()).records.map(function (r) { return Object.assign({}, r); });
+    return Challenge.entry(state, date || getTodayStr()).records.map(function (r) { return typeof Rewards !== 'undefined' ? Rewards.decorate(r) : Object.assign({}, r); });
   }
   function recordCertificateCopy(date, ids) {
     if (!state || !Array.isArray(ids)) return false;
@@ -683,7 +684,7 @@ var Game = (function () {
     const eligible = Challenge.entry(state, date).records.filter(function (r) { return ids.indexOf(r.id) >= 0 && r.amount > 0 && !r.claimedAt; });
     if (!ids.length || eligible.length !== ids.length) return false;
     eligible.forEach(function (r) { if (!r.copiedAt) r.copiedAt = Date.now(); });
-    if (save()) return true;
+    if (save()) { if (typeof Rewards !== 'undefined') Rewards.sync(); return true; }
     state = JSON.parse(before); return false;
   }
   function recordClassTalkSubmission(date, ids) {
@@ -695,7 +696,7 @@ var Game = (function () {
     if (!ids.length || eligible.length !== ids.length) return false;
     // Record only the settlement IDs the student explicitly confirms sending to ClassTalk.
     rows.forEach(function (r) { if (ids.indexOf(r.id) >= 0 && r.amount > 0 && !r.claimedAt) { r.claimedAt = Date.now(); r.submissionChannel = 'classtalk'; } });
-    if (save()) return true;
+    if (save()) { if (typeof Rewards !== 'undefined') Rewards.sync(); return true; }
     state = JSON.parse(before);
     return false;
   }
@@ -907,6 +908,7 @@ var Game = (function () {
     if (state.run && state.run.status === 'active') Battle.start();
     if (window.UI) { UI.refreshAll(); UI.updateKeeperHUD(); }
     showArrival();
+    if (typeof Rewards !== 'undefined') Rewards.sync();
   }
 
   function logout() {
@@ -1003,6 +1005,7 @@ var Game = (function () {
     });
     bindPersistence();
     startIdle();
+    if (typeof Rewards !== 'undefined') Rewards.start();
   }
 
   if (document.readyState === 'loading') {

@@ -73,6 +73,19 @@ var Auth = (function () {
     return 'starlight_save_u_' + encodeURIComponent(name);
   }
 
+  function getRewardIdentity() {
+    const name = getCurrentUser(), users = getUsers();
+    if (!name || !users[name]) return null;
+    const current = users[name].rewards;
+    if (current && /^[a-f0-9-]{36}$/.test(current.id) && /^[a-f0-9]{64}$/.test(current.secret)) return current;
+    if (!crypto.randomUUID || !crypto.getRandomValues) return null;
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    const value = {id:crypto.randomUUID(),secret:Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('')};
+    users[name].rewards=value;
+    try { localStorage.setItem(USERS_KEY,JSON.stringify(users)); } catch(e) { return null; }
+    return value;
+  }
+
   // Register new player
   async function register(name, password) {
     name = (name || '').trim();
@@ -168,6 +181,7 @@ var Auth = (function () {
       salt: user.salt,
       hash: user.hash,
       save: saveData,
+      rewards: getRewardIdentity(),
       timestamp: Date.now()
     };
 
@@ -213,6 +227,7 @@ var Auth = (function () {
     }
 
     const users = getUsers();
+    const previousRewards = users[payload.name] && users[payload.name].rewards;
     users[payload.name] = {
       name: payload.name,
       salt: payload.salt,
@@ -220,6 +235,8 @@ var Auth = (function () {
       createdAt: payload.timestamp || Date.now(),
       lastLogin: Date.now()
     };
+    const rewards = payload.rewards || previousRewards;
+    if (rewards && /^[a-f0-9-]{36}$/.test(rewards.id) && /^[a-f0-9]{64}$/.test(rewards.secret)) users[payload.name].rewards = rewards;
 
     saveUsers(users);
     const userKey = getSaveKeyForUser(payload.name);
@@ -236,6 +253,7 @@ var Auth = (function () {
     setCurrentUser: setCurrentUser,
     getUsers: getUsers,
     getSaveKeyForUser: getSaveKeyForUser,
+    getRewardIdentity: getRewardIdentity,
     register: register,
     login: login,
     logout: logout,

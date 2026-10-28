@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>루멘티아 · 선생님 보상 관리</title><link rel="stylesheet" href="/teacher/style.css"></head>
+<body><main>
+  <header><div><p class="eyebrow">LUMENTIA · TEACHER</p><h1>선생님 보상 관리</h1><p>클래스톡 수신을 확인하고, 지급한 미소를 기록하세요.</p></div><a href="/">학생 게임으로</a></header>
+  <p id="message" role="status" aria-live="polite"></p>
+  <section id="login-panel" class="panel narrow"><h2 id="login-title">선생님 로그인</h2><p id="login-description">선생님 계정으로 로그인해야 학생별 보상 기록을 볼 수 있습니다.</p>
+    <form id="login-form"><label>이메일<input id="email" type="email" autocomplete="username" required></label>
+    <label id="setup-field" hidden>최초 설정 키<input id="setup-key" type="password" autocomplete="off"></label>
+    <label>비밀번호<input id="password" type="password" autocomplete="current-password" required></label>
+    <label id="confirm-field" hidden>비밀번호 확인<input id="password-confirm" type="password" autocomplete="new-password"></label>
+    <button id="login-button" type="submit">로그인</button></form><p class="muted">학생의 게임 비밀번호와 별도로 관리됩니다. 공용 PC에서는 사용 후 로그아웃해 주세요.</p></section>
+  <section id="dashboard" hidden>
+    <div class="toolbar"><p id="account"></p><div><button id="refresh" class="secondary">새로고침</button><button id="logout" class="secondary">로그아웃</button></div></div>
+    <div class="stats"><article><span>누적 획득</span><b id="total-earned">0</b></article><article><span>수신 확인 전 잔액</span><b id="total-unconfirmed">0</b></article><article><span>수신 확인 · 지급 대기</span><b id="total-pending">0</b></article><article><span>지급 완료</span><b id="total-paid">0</b></article></div>
+    <div class="panel"><h2>기지급 내역</h2><p class="muted">이미 지급한 금액입니다. 오늘 보상에 한 번만 반영하며, 아직 연결되지 않은 금액은 보관됩니다. 이름이 다른 학생은 학생 번호를 확인해 연결하세요.</p><div id="prior-payments"></div></div>
+    <div class="panel"><p class="notice">인증서는 선생님 클래스톡으로 도착해야 효력이 있습니다. 학생 이름·학생 번호·정산 번호를 수신 내역과 대조해 주세요. 실제 지급을 마친 뒤 지급 완료를 기록하면 학생의 청구 잔액에 반영됩니다. 성장 미소와 영웅 기록은 유지됩니다.</p>
+      <div class="filters"><label>학생·정산 검색<input id="search" type="search" placeholder="이름, 학생 번호, 정산 번호"></label><label>표시할 내역<select id="filter"><option value="pending">지급 전 내역</option><option value="paid">지급 완료</option><option value="expired">미제출 만료</option><option value="all">전체 내역</option></select></label></div>
+      <div id="records"></div><p id="updated" class="muted"></p>
+    </div>
+  </section>
+</main><dialog id="action-dialog"><form id="action-form"><h2 id="action-title"></h2><p id="action-description"></p><p id="action-student" class="notice"></p><label id="received-field">클래스톡 실제 수신 시각<input id="received-at" type="datetime-local" step="1"></label><label id="amount-field">이번에 지급한 미소<input id="pay-amount" type="number" min="1" step="1"></label><label>메모 (선택)<input id="note" maxlength="200" placeholder="지급 또는 수신 확인 메모"></label><div class="dialog-actions"><button id="cancel-action" type="button" class="secondary">취소</button><button id="confirm-action" type="submit">확정</button></div><p id="action-error" role="alert"></p></form></dialog>
+<script src="/teacher/app.js" defer></script></body></html>
