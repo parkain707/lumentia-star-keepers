@@ -32,7 +32,7 @@ begin
   r:=public.lumentia_gateway(jsonb_build_object('action','pay','token',token,'claimId',claim_id,'requestId',gen_random_uuid(),'revision',2,'amount',700));assert r->'record'->>'remaining'='0' and r->'record'->>'paid'='1200','final payment';
   r:=public.lumentia_gateway(base);assert r->'records'->0->>'remaining'='0' and r->'records'->0->>'amount'='1200','stale import cannot resurrect payment, earned retained';
   r:=public.lumentia_gateway(jsonb_set(base,'{records,0,amount}','5000'));assert jsonb_array_length(r->'rejected')=1 and r->'records'->0->>'amount'='1200','immutable settlement amount';
-  r:=public.lumentia_gateway(jsonb_set(base,'{records}',jsonb_build_array(jsonb_build_object('id','REVIEW-TWO','date',day,'amount',18800,'t',ts))));assert jsonb_array_length(r->'rejected')=0,'second challenge reaches daily cap';
+  r:=public.lumentia_gateway(jsonb_set(base,'{records}',jsonb_build_array(jsonb_build_object('id','REVIEW-TWO','date',day,'amount',case when day::date>=date '2026-10-30' then 3800 else 18800 end,'t',ts))));assert jsonb_array_length(r->'rejected')=0,'second challenge reaches daily cap';
   r:=public.lumentia_gateway(jsonb_set(base,'{records}',jsonb_build_array(jsonb_build_object('id','REVIEW-THREE','date',day,'amount',1,'t',ts))));assert jsonb_array_length(r->'rejected')=1,'third challenge/day cap denied';
   ts:=floor(extract(epoch from now()-interval '73 hours')*1000);day:=to_char((now()-interval '73 hours') at time zone 'Asia/Seoul','YYYY-MM-DD');
   base:=jsonb_build_object('action','sync','studentId',sid2,'secret',secret,'name','만료검증','records',jsonb_build_array(jsonb_build_object('id','REVIEW-EXPIRED','date',day,'amount',200,'t',ts,'requestedAt',ts)));

@@ -152,7 +152,7 @@ begin
         end if;
         select * into c from lumentia_private.claims where student_id=sid and settlement_id=rid;
         if not found then
-          if (select count(*)>=2 or coalesce(sum(amount),0)+n>20000 from lumentia_private.claims where student_id=sid and reward_day=d) then
+          if (select count(*)>=2 or coalesce(sum(amount),0)+n>case when d>=date '2026-10-30' then 5000 else 20000 end from lumentia_private.claims where student_id=sid and reward_day=d) then
             rejects := rejects || jsonb_build_array(rid); continue;
           end if;
           insert into lumentia_private.claims(student_id,settlement_id,reward_day,amount,settled_at,expires_at)

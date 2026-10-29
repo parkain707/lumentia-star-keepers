@@ -601,7 +601,7 @@ var Game = (function () {
     const result = {gold: credited, points: points, pot: run.pot, gems: gems, shards: shards};
     partyPower(); save();
     if (window.UI) UI.refreshAll();
-    if (run.pot > 0 && run.pot >= 20000 - Challenge.allocated(state, run.date)) cashoutChallengePot();
+    if (run.pot > 0 && run.pot >= Challenge.limit(run.date) - Challenge.allocated(state, run.date)) cashoutChallengePot();
     return result;
   }
 

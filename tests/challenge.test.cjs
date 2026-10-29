@@ -65,6 +65,19 @@ test('daily reward is shared by two runs and auto-cashout uses only remaining da
  assert.equal(p.run('Game.getDailyRewardClaimed()'),20000);assert.equal(p.run('Game.state.run.amount'),13000);
  assert.equal(p.run('Game.state.run.status'),'cashed_out');assert.equal(p.run('Battle.started'),false);
 });
+
+test('from October 30 two runs share a 5,000 claim budget while growth remains 20,000',async()=>{
+ const p=harness({now:Date.parse('2026-10-30T01:00:00Z')});await p.run('Game.startChallenge()');p.run('Game.state.run.pot=3000;Game.cashoutChallengePot()');
+ await p.run('Game.startChallenge()');p.run('Game.state.run.pot=1999;Game.stageCleared(1,false)');
+ assert.equal(p.run('Game.getDailyRewardClaimed()'),5000);assert.equal(p.run('Game.state.run.amount'),2000);assert.equal(p.run('Game.state.run.status'),'cashed_out');
+ p.run('Game.state.pending={gold:20000,seconds:1000};Game.claimOffline()');assert.equal(p.run('Game.growthStatus().earned'),20000);
+});
+
+test('5,000 policy preserves old reward rows and existing settlements without creating negative cashouts',async()=>{
+ const p=harness({now:Date.parse('2026-10-30T01:00:00Z')});p.run('Game.state.rewardDays["2026-10-28"]={used:2,opening:0,records:[{id:"old-paid",amount:20000,expiredAmount:0,claimedAt:Date.now(),t:Date.now(),outcome:"cashed_out"}]};Game.save();Game.reloadFromAuth()');
+ assert.equal(p.run('Game.getDailyRewardClaimed("2026-10-28")'),20000);assert.equal(p.run('Challenge.limit("2026-10-28")'),20000);assert.equal(p.run('Challenge.limit("2026-10-30")'),5000);
+ await p.run('Game.startChallenge()');p.run('Game.state.rewardDays[Game.today()].opening=6000;Game.state.run.pot=100');assert.equal(p.run('Game.cashoutChallengePot().amount'),0);
+});
 test('growth kills, achievements and offline rewards never increase teacher claim',async()=>{
  const p=harness();await p.run('Game.startChallenge()');
  p.run('Game.rewardKill(5,true);Game.state.pending={gold:20000,seconds:28800};Game.claimOffline();Game.state.heroes.lumen.lv=10;Game.claimAchievement("lv10")');
