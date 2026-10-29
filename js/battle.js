@@ -257,7 +257,7 @@ const Battle = (function () {
 
     UI.setStage(n, isBossStage(n), Game.state.highest);
     if (n === BALANCE.hardStage) {
-      UI.toast('깊은 안개 구간 · 난도가 크게 오릅니다', 'bad');
+      UI.toast('깊은 안개 구간 · 1,000미소 이상 매우 위험합니다', 'bad');
     }
     if (isBossStage(n)) {
       camPulse = Math.max(camPulse, 0.05);
@@ -294,7 +294,12 @@ const Battle = (function () {
       h.buffs = [];
     });
 
-    let sub = '도전 미소 +' + UI.fmt(reward.gold) + ' (금고: ' + UI.fmt(reward.pot) + ')';
+    let sub;
+    if (reward.gold > 0) {
+      sub = '금고 +' + UI.fmt(reward.gold) + ' 미소 (총 ' + UI.fmt(reward.pot) + ')';
+    } else {
+      sub = '오늘 미소 한도에 도달했어요 · 금고를 수령하고 내일 다시';
+    }
     if (reward.gems) sub += ' · 별빛 +' + UI.fmt(reward.gems);
     if (reward.shards) sub += ' · ' + reward.shards.name + ' +' + reward.shards.amount;
     UI.showBanner('별길 ' + stage + ' 밝힘', sub);
@@ -304,8 +309,10 @@ const Battle = (function () {
     ult = Math.min(100, ult + 6);
     updatePartyUI(true);
 
-    if (reward.pot >= 2500) {
-      UI.toast('⚠️ 2,500 미소 돌파! 상급 난이도로 적이 급격히 강해집니다. 패배 시 전액 상실되니 언제든 수령하세요.');
+    if (reward.potBefore < BALANCE.hardPot && reward.pot >= BALANCE.hardPot) {
+      UI.toast('⚠️ 1,000 미소 돌파! 금고가 클수록 적이 매우 강해집니다. [멈추고 수령]으로 안전하게 받으세요.', 'bad');
+    } else if (reward.capReached) {
+      UI.toast('금고가 하루 한도(' + UI.fmt(BALANCE.maxPot) + ')까지 찼어요 · 지금 수령하세요', 'gold');
     }
   }
 
@@ -321,15 +328,15 @@ const Battle = (function () {
 
     if (failInfo.lost > 0) {
       UI.showBanner(
-        '도전 실패 · 미소 전액 상실',
-        '상급 단계에서 패배하여 누적된 ' + UI.fmt(failInfo.lost) + ' 미소를 모두 상실했습니다!',
+        '도전 실패 · 금고 비움',
+        '안개에 휩싸여 금고의 ' + UI.fmt(failInfo.lost) + ' 미소를 모두 잃었습니다!',
         'bad'
       );
-      UI.toast('💥 상급 단계 패배! 안개에 휩싸여 ' + UI.fmt(failInfo.lost) + ' 미소를 잃었습니다. 위험하기 전에 수령하세요!');
+      UI.toast('💥 안개에 휩싸여 ' + UI.fmt(failInfo.lost) + ' 미소를 잃었습니다. 위험하기 전에 수령하세요!');
     } else {
       UI.showBanner(
         '잠시 쉬어가요',
-        timeout ? '별빛을 조금 더 모으면 다시 걸을 수 있어요' : '동행들이 기운을 고르고 곧 다시 걷습니다',
+        timeout ? '[도전 시작]으로 다시 걸을 수 있어요' : '동행들이 기운을 고르고 다시 걸을 준비를 합니다',
         ''
       );
       UI.toast('동행을 성장시키면 더 먼 별길로 갈 수 있어요');
@@ -754,8 +761,20 @@ const Battle = (function () {
         if (phase === 'clear') {
           nextStage();
         } else {
-          syncParty({ full: true });
-          beginStage(stage, { retry: true });
+          // 패배하면 도전이 끝납니다. 다시 걸으려면 새 도전(하루 2회)을 시작해야 합니다.
+          started = false;
+          if (typeof Game !== 'undefined') {
+            Game.endRun();
+            const info = Game.dailyInfo ? Game.dailyInfo() : null;
+            const left = info ? info.attemptsLeft : 0;
+            if (window.UI) {
+              UI.showBanner(
+                '도전 종료',
+                left > 0 ? ('남은 도전 ' + left + '회 · [도전 시작]으로 다시 걸어요') : '오늘 도전 완료 · 내일 다시 만나요',
+                ''
+              );
+            }
+          }
         }
       }
     }
@@ -1082,13 +1101,10 @@ const Battle = (function () {
 
   function start() {
     if (typeof Game !== 'undefined') {
-      const daily = Game.checkDailyPlays();
-      if (!daily.canPlay && Game.getChallengePot() === 0) {
+      if (!Game.state) return false;
+      if (!Game.state.runActive && !Game.beginRun()) {
         if (window.UI) UI.openDailyLimitModal();
         return false;
-      }
-      if (Game.getChallengePot() === 0) {
-        Game.consumeDailyPlay();
       }
     }
     started = true;
@@ -1098,6 +1114,7 @@ const Battle = (function () {
     beginStage(Game.currentStage(), { full: true });
     updatePartyUI(true);
     UI.updateUltPct(0, false);
+    if (window.UI) UI.updateRunState();
     return true;
   }
 
@@ -1117,3 +1134,5 @@ const Battle = (function () {
     get phase() { return phase; }
   };
 })();
+
+window.Battle = Battle;

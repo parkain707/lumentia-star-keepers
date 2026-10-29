@@ -88,12 +88,13 @@
           <div class="pot-info">
             <span class="pot-icon" aria-hidden="true">💰</span>
             <div class="pot-texts">
-              <span class="pot-label">도전 누적 미소 금고</span>
+              <span class="pot-label">도전 미소 금고</span>
               <b id="pot-amount" class="pot-amount">+0 미소</b>
             </div>
             <span id="pot-danger-tag" class="pot-danger-tag" hidden>⚠️ 상급 위험</span>
           </div>
           <div class="pot-controls">
+            <span id="pot-budget" class="pot-budget">오늘 0 / 5,000</span>
             <span id="daily-play-badge" class="daily-badge" title="오늘 남은 도전 기회">도전: 2/2</span>
             <button id="btn-cashout" class="btn-cashout" type="button" disabled>🛡️ 멈추고 수령</button>
           </div>
@@ -106,6 +107,13 @@
             <span class="income-chip" id="income-chip">+0 /초</span>
           </div>
           <div id="stage-banner" class="stage-banner" aria-live="polite"></div>
+          <div id="run-overlay" class="run-overlay" hidden>
+            <p class="run-eyebrow">DAILY CHALLENGE</p>
+            <h3 class="run-title">별길 도전</h3>
+            <p id="run-overlay-desc" class="run-desc">오늘 남은 도전 2회 · 오늘 미소 0 / 5,000</p>
+            <button id="btn-start-run" class="btn-start-run" type="button">도전 시작</button>
+            <p class="run-note">1,000 미소부터 적이 매우 강해집니다 · 하루 최대 5,000 미소</p>
+          </div>
           <button id="ult-btn" class="ult-btn" aria-label="별자리 합주">
             <span class="ult-ring" id="ult-ring"></span>
             <span class="ult-core">

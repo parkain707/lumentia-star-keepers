@@ -54,6 +54,8 @@ var Game = (function () {
       challengePot: 0,
       challengeStreak: 0,
       dailyPlays: { date: getTodayStr(), count: 0 },
+      dailyEarned: { date: getTodayStr(), amount: 0 },
+      runActive: false,
       lastSeen: Date.now(),
       createdAt: Date.now(),
       pending: null
@@ -86,14 +88,25 @@ var Game = (function () {
     s.pity = Math.max(0, Math.min(GACHA.pity, Math.floor(num(data.pity, 0))));
     s.tutorial = !!data.tutorial;
     s.sfx = data.sfx !== false;
-    s.challengePot = Math.min(20000, Math.max(0, Math.floor(num(data.challengePot, 0))));
+    s.challengePot = Math.min(BALANCE.maxPot, Math.max(0, Math.floor(num(data.challengePot, 0))));
     s.challengeStreak = Math.max(0, Math.floor(num(data.challengeStreak, 0)));
     const today = getTodayStr();
     if (data.dailyPlays && typeof data.dailyPlays === 'object' && data.dailyPlays.date === today) {
-      s.dailyPlays = { date: today, count: Math.max(0, Math.floor(num(data.dailyPlays.count, 0))) };
+      s.dailyPlays = { date: today, count: Math.max(0, Math.min(BALANCE.dailyAttempts, Math.floor(num(data.dailyPlays.count, 0)))) };
     } else {
       s.dailyPlays = { date: today, count: 0 };
     }
+    if (data.dailyEarned && typeof data.dailyEarned === 'object' && data.dailyEarned.date === today) {
+      s.dailyEarned = {
+        date: today,
+        amount: Math.max(0, Math.min(BALANCE.dailyCap, Math.floor(num(data.dailyEarned.amount, 0))))
+      };
+    } else {
+      s.dailyEarned = { date: today, amount: 0 };
+    }
+    const sameDay = !!(data.dailyPlays && data.dailyPlays.date === today);
+    s.runActive = data.runActive === true && sameDay && s.tutorial;
+    s.challengePot = Math.min(s.challengePot, Math.max(0, BALANCE.dailyCap - s.dailyEarned.amount));
     s.lastSeen = num(data.lastSeen, Date.now());
     s.createdAt = num(data.createdAt, Date.now());
 
@@ -176,6 +189,56 @@ var Game = (function () {
 
   function smileCap(raw) {
     return Math.max(0, Math.min(BALANCE.maxReward, Math.round(num(raw, 0))));
+  }
+
+  function ensureDaily() {
+    if (!state) return;
+    const today = getTodayStr();
+    if (!state.dailyPlays || state.dailyPlays.date !== today) {
+      state.dailyPlays = { date: today, count: 0 };
+      state.runActive = false;
+    }
+    if (!state.dailyEarned || state.dailyEarned.date !== today) {
+      state.dailyEarned = { date: today, amount: 0 };
+    }
+    if (state.dailyEarned.amount > BALANCE.dailyCap) state.dailyEarned.amount = BALANCE.dailyCap;
+    if ((state.challengePot || 0) > BALANCE.maxPot) state.challengePot = BALANCE.maxPot;
+  }
+
+  function budgetLeft() {
+    if (!state) return 0;
+    ensureDaily();
+    return Math.max(0, BALANCE.dailyCap - state.dailyEarned.amount);
+  }
+
+  // 모든 미소 지급은 이 창구를 지납니다. 하루 5,000미소를 넘길 수 없습니다.
+  function grantSmile(amount, label, opts) {
+    opts = opts || {};
+    if (!state) return 0;
+    ensureDaily();
+    const want = smileCap(amount);
+    const value = Math.min(want, budgetLeft());
+    if (value <= 0) {
+      if (!opts.silent && window.UI) {
+        UI.toast('오늘의 미소 한도(' + fmt(BALANCE.dailyCap) + ')를 모두 받았어요 · 내일 다시 만나요', 'bad');
+      }
+      return 0;
+    }
+    state.gold += value;
+    state.stats.totalGold += value;
+    state.dailyEarned.amount += value;
+    if (!opts.silent) reportSmile(value, label || '미소 보상');
+    if (window.UI && UI.updateDaily) UI.updateDaily();
+    return value;
+  }
+
+  function depositPot(amount) {
+    if (!state) return 0;
+    ensureDaily();
+    const room = Math.max(0, Math.min(BALANCE.maxPot, BALANCE.dailyCap - state.dailyEarned.amount) - (state.challengePot || 0));
+    const added = Math.min(room, smileCap(amount));
+    if (added > 0) state.challengePot = (state.challengePot || 0) + added;
+    return added;
   }
 
   function reportSmile(amount, label) {
@@ -537,15 +600,10 @@ var Game = (function () {
 
   function rewardKill(stage, isBoss) {
     if (!state) return 0;
-    const gold = smileCap(
-      BALANCE.killGold *
+    const gold = BALANCE.killGold *
       Math.pow(BALANCE.goldGrowth, Math.max(0, stage - 1)) *
-      (isBoss ? BALANCE.bossGoldMult : 1)
-    );
-    state.gold += gold;
-    state.stats.totalGold += gold;
-    reportSmile(gold, isBoss ? '성좌의 문' : '별빛 산책');
-    return gold;
+      (isBoss ? BALANCE.bossGoldMult : 1);
+    return depositPot(gold);
   }
 
   function onBossKill() {
@@ -582,12 +640,9 @@ var Game = (function () {
       }
     }
 
-    gold = smileCap(gold);
-
-    // Accumulate into Challenge Pot!
-    const prevPot = state.challengePot || 0;
-    const addedPot = Math.min(20000 - prevPot, gold);
-    state.challengePot = Math.min(20000, prevPot + addedPot);
+    // Accumulate into Challenge Pot (daily cap applies to every smile).
+    const potBefore = state.challengePot || 0;
+    const addedPot = depositPot(gold);
     state.challengeStreak = (state.challengeStreak || 0) + 1;
     partyPower();
     save();
@@ -602,24 +657,28 @@ var Game = (function () {
     return {
       gold: addedPot,
       pot: state.challengePot,
+      potBefore: potBefore,
       gems: gems,
       shards: shards,
-      isHard: state.challengePot >= 2500
+      isHard: state.challengePot >= BALANCE.hardPot,
+      capReached: state.challengePot >= BALANCE.maxPot
     };
   }
 
   function checkDailyPlays() {
-    if (!state) return { available: 0, max: 2, canPlay: false, used: 2 };
+    const max = BALANCE.dailyAttempts;
+    if (!state) return { available: 0, max: max, canPlay: false, used: max };
     const today = getTodayStr();
     if (!state.dailyPlays || state.dailyPlays.date !== today) {
       state.dailyPlays = { date: today, count: 0 };
+      state.runActive = false;
     }
-    const used = state.dailyPlays.count || 0;
-    const available = Math.max(0, 2 - used);
+    const used = Math.min(max, state.dailyPlays.count || 0);
+    const available = Math.max(0, max - used);
     return {
       available: available,
       used: used,
-      max: 2,
+      max: max,
       canPlay: available > 0
     };
   }
@@ -634,6 +693,50 @@ var Game = (function () {
     return true;
   }
 
+  function beginRun() {
+    if (!state) return false;
+    ensureDaily();
+    if (state.runActive) return true;
+    if (!checkDailyPlays().canPlay) return false;
+    consumeDailyPlay();
+    state.runActive = true;
+    save();
+    if (window.UI) UI.updateRunState();
+    return true;
+  }
+
+  function endRun() {
+    if (!state || !state.runActive) return;
+    state.runActive = false;
+    save();
+    if (window.UI) UI.updateRunState();
+  }
+
+  function dailyInfo() {
+    const info = {
+      cap: BALANCE.dailyCap,
+      earned: 0,
+      remaining: BALANCE.dailyCap,
+      attemptsLeft: 0,
+      used: BALANCE.dailyAttempts,
+      max: BALANCE.dailyAttempts,
+      canPlay: false,
+      pot: 0,
+      runActive: false
+    };
+    if (!state) return info;
+    ensureDaily();
+    const d = checkDailyPlays();
+    info.earned = state.dailyEarned.amount;
+    info.remaining = Math.max(0, BALANCE.dailyCap - info.earned);
+    info.attemptsLeft = d.available;
+    info.used = d.used;
+    info.canPlay = d.canPlay;
+    info.pot = state.challengePot || 0;
+    info.runActive = !!state.runActive;
+    return info;
+  }
+
   function getChallengePot() {
     return state ? (state.challengePot || 0) : 0;
   }
@@ -641,17 +744,14 @@ var Game = (function () {
   function getDifficultyMultiplier() {
     if (!state) return { hpMult: 1, atkMult: 1, isHard: false, pot: 0 };
     const pot = state.challengePot || 0;
-    if (pot < 2500) {
+    if (pot < BALANCE.hardPot) {
       return { hpMult: 1.0, atkMult: 1.0, isHard: false, pot: pot };
     }
-    // 2500 미소부터 점점 어려워짐!
-    const excess = pot - 2500;
-    const ramp = excess / 2500;
-    const hpMult = 1.4 + ramp * 0.85;
-    const atkMult = 1.25 + ramp * 0.45;
+    // 1,000 미소부터 곧바로 매우 어려워지고, 금고가 찰수록 더 강해집니다.
+    const ramp = (pot - BALANCE.hardPot) / 1000;
     return {
-      hpMult: Math.min(10, hpMult),
-      atkMult: Math.min(6, atkMult),
+      hpMult: Math.min(10, 2.4 + ramp * 1.2),
+      atkMult: Math.min(6, 1.9 + ramp * 0.6),
       isHard: true,
       pot: pot
     };
@@ -659,20 +759,32 @@ var Game = (function () {
 
   function cashoutChallengePot() {
     if (!state || (state.challengePot || 0) <= 0) return { ok: false, amount: 0 };
-    const amount = state.challengePot;
-    state.challengePot = 0;
+    ensureDaily();
+    const pot = state.challengePot || 0;
+    const amount = Math.min(pot, budgetLeft());
+    if (amount <= 0) {
+      if (window.UI) {
+        UI.toast('오늘의 미소 한도(' + fmt(BALANCE.dailyCap) + ')를 모두 받았어요 · 내일 다시 만나요', 'bad');
+      }
+      return { ok: false, amount: 0, reason: 'daily-cap' };
+    }
+    state.challengePot = pot - amount;
     state.challengeStreak = 0;
     state.gold += amount;
     state.stats.totalGold += amount;
+    state.dailyEarned.amount += amount;
+    state.runActive = false;
     partyPower();
     save();
-    reportSmile(amount, '도전 포기 수령');
+    reportSmile(amount, '도전 수령');
+    if (typeof Battle !== 'undefined') Battle.pause();
     if (window.UI) {
       UI.renderHUD();
       UI.renderChallengePot();
+      UI.updateRunState();
       UI.openTeacherCertificate(amount);
     }
-    return { ok: true, amount: amount };
+    return { ok: true, amount: amount, remainder: state.challengePot };
   }
 
   function failChallengePot() {
@@ -746,12 +858,10 @@ var Game = (function () {
     if (a.reward.gems) state.gems += a.reward.gems;
     let smile = 0;
     if (a.reward.gold) {
-      smile = smileCap(a.reward.gold);
-      state.gold += smile;
+      smile = grantSmile(a.reward.gold, '임무 보상');
     }
     save();
-    if (smile > 0) reportSmile(smile, '임무 보상');
-    return { ok: true, label: a.title, reward: a.reward };
+    return { ok: true, label: a.title, reward: a.reward, gold: smile };
   }
 
   /* ---------------- offline / settings ---------------- */
@@ -780,18 +890,17 @@ var Game = (function () {
   }
 
   function claimOffline(info) {
-    if (!state) return;
+    if (!state) return 0;
     const pending = state.pending || info;
-    if (!pending) return;
-    const gold = smileCap(pending.gold);
-    state.gold += gold;
-    state.stats.totalGold += gold;
-    state.pending = null;
+    if (!pending) return 0;
+    const gold = grantSmile(pending.gold, '휴식 보상');
+    const leftover = Math.max(0, pending.gold - gold);
+    state.pending = leftover > 0 ? { gold: leftover, seconds: pending.seconds || 0 } : null;
     pendingOffline = null;
     partyPower();
     save();
-    if (gold > 0) reportSmile(gold, '휴식 보상');
     if (window.UI) UI.renderHUD();
+    return gold;
   }
 
   function startJourney() {
@@ -832,7 +941,8 @@ var Game = (function () {
       lastTick = now;
       if (dt <= 0) return;
       if (dt > 5) dt = 5;
-      state.gold += goldRate(state.highest) * dt;
+      // 도전 중에만 미소가 금고에 쌓입니다. 받은 미소는 [멈추고 수령]으로 정산합니다.
+      if (state.runActive) depositPot(goldRate(state.highest) * BALANCE.potIdleRate * dt);
       if (window.UI && document.visibilityState !== 'hidden') UI.renderHUD();
     }, 500);
   }
@@ -851,6 +961,39 @@ var Game = (function () {
 
   function getGuideStep() {
     if (!state) return null;
+    const info = dailyInfo();
+
+    // 0. 도전 시작 / 금고 수령
+    if (!state.runActive) {
+      if ((state.challengePot || 0) > 0) {
+        return {
+          id: 'cashout',
+          title: '금고 수령',
+          desc: '금고에 ' + fmt(state.challengePot) + ' 미소가 있어요! [멈추고 수령]을 눌러 미소를 받고 선생님께 알려주세요.',
+          tab: 'battle',
+          target: 'cashout'
+        };
+      }
+      return {
+        id: 'start_run',
+        title: info.canPlay ? '오늘의 도전' : '오늘 도전 완료',
+        desc: info.canPlay
+          ? '오늘 ' + info.attemptsLeft + '회 도전할 수 있어요. [도전 시작]을 눌러 별길을 걷고 미소를 모으세요!'
+          : '오늘 도전 2회를 모두 마쳤습니다. 내일 다시 만나요!',
+        tab: 'battle',
+        target: 'start'
+      };
+    }
+    if ((state.challengePot || 0) >= BALANCE.hardPot) {
+      return {
+        id: 'cashout_danger',
+        title: '금고가 위험해요',
+        desc: '금고 ' + fmt(state.challengePot) + ' 미소 · 1,000미소부터 적이 매우 강해집니다! 지금 [멈추고 수령]으로 안전하게 받으세요.',
+        tab: 'battle',
+        target: 'cashout'
+      };
+    }
+
     // 1. 궁극기 준비
     if (window.Battle && Battle.ult >= 100) {
       return {
@@ -862,7 +1005,7 @@ var Game = (function () {
       };
     }
     // 2. 무료 10연 소환 대기
-    if (!state.starterClaimed) {
+    if (state.freeTen) {
       return {
         id: 'summon_free',
         title: '무료 10회 소환',
@@ -932,7 +1075,7 @@ var Game = (function () {
     partyPower();
     if (typeof Battle !== 'undefined') {
       Battle.syncParty();
-      if (state.tutorial) Battle.start();
+      if (state.tutorial && state.runActive) Battle.start();
     }
     if (window.UI) {
       UI.refreshAll();
@@ -996,6 +1139,10 @@ var Game = (function () {
     getKeeperName: getKeeperName,
     checkDailyPlays: checkDailyPlays,
     consumeDailyPlay: consumeDailyPlay,
+    beginRun: beginRun,
+    endRun: endRun,
+    dailyInfo: dailyInfo,
+    budgetLeft: budgetLeft,
     getChallengePot: getChallengePot,
     getDifficultyMultiplier: getDifficultyMultiplier,
     cashoutChallengePot: cashoutChallengePot,
@@ -1020,8 +1167,9 @@ var Game = (function () {
       // Prompt Name & Password Gate for authentication
       UI.openKeeperGate();
     } else {
-      if (state.tutorial) Battle.start();
       pendingOffline = computeOffline();
+      // 진행 중이던 도전만 이어서 달립니다. 새 도전은 [도전 시작]으로만 시작합니다.
+      if (state.tutorial && state.runActive) Battle.start();
       if (!state.tutorial) {
         UI.openWelcome();
       } else if (pendingOffline) {

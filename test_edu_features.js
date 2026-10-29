@@ -5,7 +5,7 @@ const path = require('path');
 
 const PORT = 9445;
 const CHROME_PATH = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-const ARTIFACT_DIR = "C:\\Users\\user\\.gemini\\antigravity\\brain\\5638f1a9-7f94-4984-a0ff-b0d3f56c0a19";
+const ARTIFACT_DIR = path.join(__dirname, 'audit-edu');
 
 async function sleep(ms) {
   return new Promise(res => setTimeout(res, ms));
@@ -149,31 +149,31 @@ async function runTest() {
     }
     console.log("=> PASSED: Daily limit strictly capped at 2 runs per day.");
 
-    // 2. Verify Difficulty Scaling (>= 2500 smiles)
-    console.log("\nTEST 2: Push-Your-Luck Difficulty Scaling (>= 2500 Smiles)...");
+    // 2. Verify Difficulty Scaling (>= 1000 smiles)
+    console.log("\nTEST 2: Push-Your-Luck Difficulty Scaling (>= 1000 Smiles)...");
     const diffTest = await client.eval(`
       (() => {
         const state = Game.state;
-        state.challengePot = 1200;
+        state.challengePot = 500;
         const normal = Game.getDifficultyMultiplier();
-        
-        state.challengePot = 2500;
+
+        state.challengePot = 1000;
         const threshold = Game.getDifficultyMultiplier();
-        
-        state.challengePot = 5000;
+
+        state.challengePot = 2500;
         const intense = Game.getDifficultyMultiplier();
-        
-        state.challengePot = 15000;
+
+        state.challengePot = 5000;
         const extreme = Game.getDifficultyMultiplier();
-        
+
         return { normal, threshold, intense, extreme };
       })()
     `);
     console.log("Difficulty scaling result:", JSON.stringify(diffTest, null, 2));
-    if (diffTest.normal.isHard !== false || diffTest.threshold.isHard !== true || diffTest.threshold.hpMult < 1.4) {
+    if (diffTest.normal.isHard !== false || diffTest.threshold.isHard !== true || diffTest.threshold.hpMult < 1.8) {
       throw new Error("Difficulty scaling calculation error: " + JSON.stringify(diffTest));
     }
-    console.log("=> PASSED: Normal under 2,500 smiles (1.0x); Dangerously ramps up beyond 2,500 smiles.");
+    console.log("=> PASSED: Normal under 1,000 smiles (1.0x); sharply ramps up at 1,000 smiles.");
 
     // 3. Verify Challenge Pot UI & Cashout Mechanics
     console.log("\nTEST 3: Pot Bar Render & Cashout...");

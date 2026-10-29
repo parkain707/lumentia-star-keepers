@@ -231,19 +231,26 @@ const BALANCE = {
   bossInterval: 2.2,
   bossGoldMult: 9,
 
-  // 10,000미소 이상 구간: 안개가 짙어져 난도가 크게 오릅니다.
+  // 1,000미소 이상 구간: 안개가 짙어져 난도가 매우 크게 오릅니다.
   hardStage: 13,
-  hardReward: 10000,
-  hardHpGrowth: 1.12,
-  hardAtkGrowth: 1.08,
-  hardBossGrowth: 1.15,
+  hardReward: 1000,
+  hardHpGrowth: 1.16,
+  hardAtkGrowth: 1.1,
+  hardBossGrowth: 1.18,
 
-  killGold: 100,
+  killGold: 22,
   goldGrowth: 1.22,
   goldPerSec: 2,
   goldPerSecGrowth: 1.2,
+  potIdleRate: 0.5,
 
   maxReward: 20000,
+
+  // 하루 경제 규칙: 미소는 하루 5,000을 넘을 수 없고, 도전은 하루 2회뿐입니다.
+  dailyCap: 5000,
+  dailyAttempts: 2,
+  maxPot: 5000,
+  hardPot: 1000,
 
   ascendGoldBase: 700,
   ascendGoldGrowth: 2.1,
