@@ -131,20 +131,44 @@ test('onboarding leads a new student through summon, growth, start, cashout and 
  p.run('Game.recordClassTalkSubmission(Game.today(),Game.teacherLog().map(r=>r.id))');assert.equal(p.run('Game.getGuideStep().id'),'challenge_start');
  p.run('Game.save();Game.reloadFromAuth()');assert.equal(p.run('Game.state.onboarding.grown'),true);
 });
-test('5,000 reward threshold includes banked first-run rewards and warns before the crossing stage',async()=>{
+test('1,000 reward threshold starts at the exact boundary and includes banked first-run rewards',async()=>{
  const p=harness();await p.run('Game.startChallenge()');
- p.run('Game.state.run.pot=4700');assert.equal(p.run('Game.getDifficultyMultiplier().isHard'),false);
- p.run('Game.state.run.pot=4900');assert.equal(p.run('Game.getDifficultyMultiplier().isHard'),true);
- assert.ok(p.run('Game.getDifficultyMultiplier().enemyHpFloor')>0);
+ p.run('Game.state.run.pot=829');assert.equal(p.run('Game.getDifficultyMultiplier().projected'),999);assert.equal(p.run('Game.getDifficultyMultiplier().isHard'),false);
+ p.run('Game.state.run.pot=830');assert.equal(p.run('Game.getDifficultyMultiplier().projected'),1000);assert.equal(p.run('Game.getDifficultyMultiplier().isHard'),true);
+ assert.ok(p.run('Game.getDifficultyMultiplier().hpMult')>=5);assert.ok(p.run('Game.getDifficultyMultiplier().atkMult')>=4);
+ p.run('Game.state.run.pot=600');
  p.run('Game.cashoutChallengePot()');await p.run('Game.startChallenge()');
+ p.run('Game.state.run.pot=229');assert.equal(p.run('Game.getDifficultyMultiplier().isHard'),false);
+ p.run('Game.state.run.pot=230');
  assert.equal(p.run('Game.getDifficultyMultiplier().isHard'),true);assert.equal(p.run('Game.getGuideStep().id'),'reward_risk');
+ assert.match(p.run('Game.getGuideStep().title'),/1,000/);
 });
 test('high-level starting parties also receive a meaningful extreme-risk enemy floor; baseline persists on resume',async()=>{
- const p=harness({storage:seed(legacy())});await p.run('Game.startChallenge()');p.run('Game.state.run.pot=4900');
+ const p=harness({storage:seed(legacy())});await p.run('Game.startChallenge()');p.run('Game.state.run.pot=830');
  const baseline=p.obj('Game.state.run.baseline'), diff=p.obj('Game.getDifficultyMultiplier()');
  assert.ok(diff.enemyHpFloor>=baseline.atk*20);assert.ok(diff.enemyAtkFloor>=baseline.hp*0.18);
  p.run('Game.save();Game.reloadFromAuth()');assert.deepEqual(p.obj('Game.state.run.baseline'),baseline);
  assert.deepEqual(p.obj('Game.getDifficultyMultiplier()'),diff);
+});
+
+test('natural stage-five boundary spawns extreme enemies before awarding 1,000; higher rewards get harder',async()=>{
+ const p=harness({storage:seed(legacy())});await p.run('Game.startChallenge()');
+ for(let stage=1;stage<=4;stage++)p.run(`Game.state.run.stage=${stage};Game.stageCleared(${stage},false)`);
+ assert.ok(p.run('Game.getChallengePot()')<1000);
+ p.run('Game.state.run.stage=5;Battle.stop();Battle.start()');
+ const diff=p.obj('Game.getDifficultyMultiplier()');assert.equal(diff.isHard,true);assert.ok(diff.projected>=1000);
+ assert.ok(p.run('Battle.snapshot().enemies[0].maxHp')>=diff.enemyHpFloor);assert.ok(p.run('Battle.snapshot().enemies[0].atk')>=diff.enemyAtkFloor);
+ assert.ok(p.ui.some(x=>x.method==='toast' && /1,000/.test(x.args[0])));
+ p.run('Game.state.run.pot=5000');const higher=p.obj('Game.getDifficultyMultiplier()');
+ assert.ok(higher.hpMult>diff.hpMult);assert.ok(higher.atkMult>diff.atkMult);
+ assert.ok(higher.enemyHpFloor>diff.enemyHpFloor);assert.ok(higher.enemyAtkFloor>diff.enemyAtkFloor);
+});
+
+test('growth wallet does not trigger reward risk and previous-day awards do not carry into the new day',async()=>{
+ const p=harness();p.run('Game.state.gold=20000;Game.save()');await p.run('Game.startChallenge()');
+ assert.equal(p.run('Game.getDifficultyMultiplier().isHard'),false);
+ p.run('Game.state.run.pot=1000;Game.cashoutChallengePot()');p.advance(24*3600000);await p.run('Game.startChallenge()');
+ assert.equal(p.run('Game.getDifficultyMultiplier().isHard'),false);assert.equal(p.run('Game.state.gold'),20000);
 });
 test('a claim made after expiry cannot mark expired records claimed',async()=>{
  const p=harness();await p.run('Game.startChallenge()');p.run('Game.state.run.pot=1000;Game.cashoutChallengePot()');

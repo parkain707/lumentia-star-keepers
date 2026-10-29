@@ -4,6 +4,7 @@
 const Challenge = (function () {
   const DAILY_LIMIT = 20000;
   const DAILY_PLAYS = 2;
+  const HARD_REWARD_THRESHOLD = 1000;
   const CLAIM_TTL = 72 * 3600000;
   function integer(n, max) {
     n = Number(n);
@@ -134,5 +135,5 @@ const Challenge = (function () {
     });
     return amount;
   }
-  return {DAILY_LIMIT: DAILY_LIMIT, DAILY_PLAYS: DAILY_PLAYS, CLAIM_TTL: CLAIM_TTL, integer: integer, day: day, entry: entry, total: total, allocated: allocated, expire: expire, claim: claim, migrate: migrate, begin: begin, accumulate: accumulate, finish: finish};
+  return {DAILY_LIMIT: DAILY_LIMIT, DAILY_PLAYS: DAILY_PLAYS, HARD_REWARD_THRESHOLD: HARD_REWARD_THRESHOLD, CLAIM_TTL: CLAIM_TTL, integer: integer, day: day, entry: entry, total: total, allocated: allocated, expire: expire, claim: claim, migrate: migrate, begin: begin, accumulate: accumulate, finish: finish};
 })();

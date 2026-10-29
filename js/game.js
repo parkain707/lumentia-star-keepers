@@ -627,9 +627,9 @@ var Game = (function () {
     const run = state && state.run;
     const nextPoints = smileCap(170 * Math.pow(BALANCE.goldGrowth, currentStage() - 1));
     const projected = run ? Challenge.allocated(state, run.date) + run.pot + nextPoints : 0;
-    if (!run || run.status !== 'active' || projected < 5000) return {hpMult: 1, atkMult: 1, isHard: false, projected: projected};
+    if (!run || run.status !== 'active' || projected < Challenge.HARD_REWARD_THRESHOLD) return {hpMult: 1, atkMult: 1, isHard: false, projected: projected};
     const baseline = run.baseline || combatBaseline();
-    const excess = (projected - 5000) / 1000;
+    const excess = (projected - Challenge.HARD_REWARD_THRESHOLD) / 1000;
     return {
       hpMult: Math.min(80, 5 + excess * 7), atkMult: Math.min(60, 4 + excess * 5), isHard: true, projected: projected,
       enemyHpFloor: baseline.atk * (20 + excess * 8), enemyAtkFloor: baseline.hp * (0.18 + excess * 0.06)
@@ -897,7 +897,7 @@ var Game = (function () {
       if (!checkDailyPlays().canPlay) return {id:'daily_done', title:'오늘의 도전 완료', desc:'오늘 두 번의 도전을 마쳤어요. 영웅을 키우고 내일 다시 만나요!', action:'보상 기록 보기', target:'records', tab:'battle'};
       return {id:'challenge_start', title:'3 / 5 · 별길 도전', desc:'이제 도전 시작을 눌러보세요. 동행이 스스로 싸워요. 하루에 두 번 도전할 수 있어요.', action:'도전 시작', tab:'battle', target:'start', focus:'btn-start-challenge'};
     }
-    if (getDifficultyMultiplier().isHard) return {id:'reward_risk', title:'5,000미소 초과 · 극한 도전', desc:'이번 구간부터 오늘 보상이 5,000미소를 넘어가 매우 어려워요. 패배하면 금고를 잃어요. 지금 안전하게 수령할 수 있어요.', action:'안전하게 수령', tab:'battle', target:'cashout', focus:'btn-cashout'};
+    if (getDifficultyMultiplier().isHard) return {id:'reward_risk', title:'1,000미소 이상 · 극한 도전', desc:'이번 구간을 통과하면 오늘 보상이 1,000미소 이상이 되어 매우 어려워요. 패배하면 금고를 잃어요. 지금 안전하게 수령할 수 있어요.', action:'안전하게 수령', tab:'battle', target:'cashout', focus:'btn-cashout'};
     if (getChallengePot() > 0 && !hasCashedOut) return {id:'first_cashout', title:'4 / 5 · 금고 수령', desc:'금고에 포인트가 쌓였어요! 멈추고 수령하면 이번 도전이 끝나고 선생님께 청구할 미소가 돼요.', action:'수령 방법 보기', tab:'battle', target:'cashout', focus:'btn-cashout'};
     if (typeof Battle !== 'undefined' && Battle.ult >= 100) return {id:'ult', title:'별자리 합주 준비!', desc:'게이지가 가득 찼어요. 별자리 합주로 적을 공격하고 동행을 회복하세요.', action:'별자리 합주', tab:'battle', target:'ult', focus:'ult-btn'};
     return {id:'progress', title:'동행이 자동으로 싸우고 있어요', desc:'스테이지를 밝히면 금고 포인트가 쌓여요. 원하는 순간 멈추고 수령하세요. 성장 미소로 영웅도 키울 수 있어요.', action:'전투 보기', tab:'battle', target:'battle'};

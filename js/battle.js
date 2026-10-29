@@ -254,7 +254,7 @@ const Battle = (function () {
     slashes = [];
     rings = [];
     spawnEnemies(n);
-    if (Game.getDifficultyMultiplier().isHard) UI.toast('고위험 도전 · 오늘 보상 5,000미소 초과 구간은 매우 어렵습니다. 금고를 잃기 전에 수령할 수 있어요.', 'bad');
+    if (Game.getDifficultyMultiplier().isHard) UI.toast('고위험 도전 · 오늘 보상 1,000미소 이상을 얻는 구간은 매우 어렵습니다. 금고를 잃기 전에 수령할 수 있어요.', 'bad');
     if (opts.full) syncParty({ full: true });
 
     UI.setStage(n, isBossStage(n), Game.state.highest);
